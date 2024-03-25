@@ -18,7 +18,7 @@ import io.vertx.redis.client.RedisRole;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-@ConfigMapping(prefix = "hono.cache.redis") //, namingStrategy = ConfigMapping.NamingStrategy.VERBATIM)
+@ConfigMapping(prefix = "hono.cache.redis", namingStrategy = ConfigMapping.NamingStrategy.VERBATIM)
 public interface RedisConfig {
 
     /**

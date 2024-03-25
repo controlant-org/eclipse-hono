@@ -14,7 +14,6 @@
 
 package org.eclipse.hono.commandrouter.app;
 
-import io.quarkus.runtime.configuration.ConfigurationException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,6 +45,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.opentracing.Tracer;
+import io.quarkus.runtime.configuration.ConfigurationException;
 import io.smallrye.config.ConfigMapping;
 import io.vertx.core.Vertx;
 import io.vertx.redis.client.RedisAPI;

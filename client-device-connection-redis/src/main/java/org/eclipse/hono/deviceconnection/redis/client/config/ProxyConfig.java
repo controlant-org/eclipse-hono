@@ -5,7 +5,6 @@ package org.eclipse.hono.deviceconnection.redis.client.config;
 
 import java.util.Optional;
 
-import io.quarkus.runtime.annotations.ConfigGroup;
 import io.smallrye.config.WithDefault;
 import io.vertx.core.net.ProxyType;
 
@@ -13,7 +12,6 @@ import io.vertx.core.net.ProxyType;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-@ConfigGroup
 public interface ProxyConfig {
 
     /**
