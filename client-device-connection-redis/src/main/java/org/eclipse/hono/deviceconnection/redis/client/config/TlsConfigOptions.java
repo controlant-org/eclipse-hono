@@ -14,7 +14,7 @@ import io.smallrye.config.WithDefault;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-public interface TlsConfig {
+public interface TlsConfigOptions {
 
     /**
      * Whether SSL/TLS is enabled.

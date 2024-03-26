@@ -13,7 +13,7 @@ import io.smallrye.config.WithParentName;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-public interface Jks {
+public interface JksOptions {
     /**
      * TODO.
      */
@@ -34,7 +34,7 @@ public interface Jks {
     /**
      * TODO.
      */
-    default JksConfiguration convert() {
+    default JksConfiguration convertToJksConfiguration() {
         final JksConfiguration jks = new JksConfiguration();
         jks.enabled = enabled();
         jks.path = path();

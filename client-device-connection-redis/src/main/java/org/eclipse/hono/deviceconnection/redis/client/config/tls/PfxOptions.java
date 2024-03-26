@@ -13,7 +13,7 @@ import io.smallrye.config.WithParentName;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-public interface Pfx {
+public interface PfxOptions {
     /**
      * TODO.
      */
@@ -34,7 +34,7 @@ public interface Pfx {
     /**
      * TODO.
      */
-    default PfxConfiguration convert() {
+    default PfxConfiguration convertToPfxConfiguration() {
         final PfxConfiguration jks = new PfxConfiguration();
         jks.enabled = enabled();
         jks.path = path();

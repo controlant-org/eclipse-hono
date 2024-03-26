@@ -13,7 +13,6 @@
 
 package org.eclipse.hono.deviceconnection.redis.client;
 
-import io.vertx.core.Vertx;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -31,38 +30,29 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
+import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.Response;
 
 /**
  * TODO.
  */
-public class RedisCacheVertx implements Cache<String, String>, Lifecycle {
+public class RedisCache implements Cache<String, String>, Lifecycle {
 
-    private static final Logger LOG = LoggerFactory.getLogger(RedisCacheVertx.class);
+    private static final Logger LOG = LoggerFactory.getLogger(RedisCache.class);
 
     private final RedisAPI api;
 
     /**
      * TODO.
      *
-     * @param api TODO.
+     * @param redis TODO.
      */
-    private RedisCacheVertx(final RedisAPI api) {
-        Objects.requireNonNull(api);
-        this.api = api;
-    }
-
-    /**
-     * TODO.
-     *
-     * @param api TODO.
-     * @return TODO.
-     */
-    public static RedisCacheVertx from(final RedisAPI api) {
-        Objects.requireNonNull(api);
-        return new RedisCacheVertx(api);
+    private RedisCache(final Redis redis) {
+        Objects.requireNonNull(redis);
+        this.api = RedisAPI.api(redis);
     }
 
     /**
@@ -72,9 +62,10 @@ public class RedisCacheVertx implements Cache<String, String>, Lifecycle {
      * @param properties TODO.
      * @return TODO.
      */
-    public static RedisCacheVertx from(final Vertx vertx, final RedisConfigProperties properties) {
-        Objects.requireNonNull(api);
-        return new RedisCacheVertx(api);
+    public static RedisCache from(final Vertx vertx, final RedisConfigProperties properties) {
+        Objects.requireNonNull(vertx);
+        Objects.requireNonNull(properties);
+        return new RedisCache(Redis.createClient(vertx, properties));
     }
 
     @Override

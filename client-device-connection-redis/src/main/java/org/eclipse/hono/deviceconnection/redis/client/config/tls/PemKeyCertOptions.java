@@ -14,7 +14,7 @@ import io.smallrye.config.WithParentName;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-public interface PemKeyCert {
+public interface PemKeyCertOptions {
     /**
      * TODO.
      */
@@ -35,7 +35,7 @@ public interface PemKeyCert {
     /**
      * TODO.
      */
-    default PemKeyCertConfiguration convert() {
+    default PemKeyCertConfiguration convertToPemKeyCertConfiguration() {
         final PemKeyCertConfiguration pemKeyCert = new PemKeyCertConfiguration();
         pemKeyCert.enabled = enabled();
         pemKeyCert.keys = keys();

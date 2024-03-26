@@ -14,7 +14,7 @@ import java.util.Set;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-public interface NetConfig {
+public interface NetConfigOptions {
 
     /**
      * Set the ALPN usage.
@@ -50,7 +50,7 @@ public interface NetConfig {
     /**
      * Set proxy options for connections via CONNECT proxy.
      */
-    ProxyConfig proxyOptions();
+    ProxyConfigOptions proxyOptions();
 
     /**
      * Set the read idle timeout.

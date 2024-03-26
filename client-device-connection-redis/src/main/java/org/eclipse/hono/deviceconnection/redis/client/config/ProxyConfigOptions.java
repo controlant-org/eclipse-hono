@@ -12,7 +12,7 @@ import io.vertx.core.net.ProxyType;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-public interface ProxyConfig {
+public interface ProxyConfigOptions {
 
     /**
      * Set proxy username.

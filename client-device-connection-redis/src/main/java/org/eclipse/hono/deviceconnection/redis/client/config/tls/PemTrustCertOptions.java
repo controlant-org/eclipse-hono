@@ -14,7 +14,7 @@ import io.smallrye.config.WithParentName;
  * TODO.
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
-public interface PemTrustCertificate {
+public interface PemTrustCertOptions {
     /**
      * TODO.
      */
@@ -30,7 +30,7 @@ public interface PemTrustCertificate {
     /**
      * TODO.
      */
-    default PemTrustCertConfiguration convert() {
+    default PemTrustCertConfiguration convertToPemTrustCertConfiguration() {
         final PemTrustCertConfiguration trustCertificatePem = new PemTrustCertConfiguration();
         trustCertificatePem.enabled = enabled();
         trustCertificatePem.certs = certs();

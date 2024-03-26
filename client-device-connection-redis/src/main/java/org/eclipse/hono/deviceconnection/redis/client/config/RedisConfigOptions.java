@@ -19,7 +19,7 @@ import io.vertx.redis.client.RedisRole;
  */
 @SuppressWarnings("checkstyle:JavadocMethod")
 @ConfigMapping(prefix = "hono.cache.redis", namingStrategy = ConfigMapping.NamingStrategy.VERBATIM)
-public interface RedisConfig {
+public interface RedisConfigOptions {
 
     /**
      * The redis hosts to use while connecting to the redis server. Only the cluster and sentinel modes will consider more than
@@ -158,12 +158,12 @@ public interface RedisConfig {
     /**
      * TCP config.
      */
-    NetConfig tcp();
+    NetConfigOptions tcp();
 
     /**
      * SSL/TLS config.
      */
-    TlsConfig tls();
+    TlsConfigOptions tls();
 
     /**
      * TODO.

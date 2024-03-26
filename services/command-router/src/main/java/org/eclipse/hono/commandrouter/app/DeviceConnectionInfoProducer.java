@@ -32,9 +32,9 @@ import org.eclipse.hono.deviceconnection.infinispan.client.EmbeddedCache;
 import org.eclipse.hono.deviceconnection.infinispan.client.HotrodCache;
 import org.eclipse.hono.deviceconnection.infinispan.client.InfinispanRemoteConfigurationOptions;
 import org.eclipse.hono.deviceconnection.infinispan.client.InfinispanRemoteConfigurationProperties;
-import org.eclipse.hono.deviceconnection.redis.client.RedisCacheVertx;
-import org.eclipse.hono.deviceconnection.redis.client.config.RedisConfig;
-import org.eclipse.hono.deviceconnection.redis.client.vertx.VertxRedisClientFactory;
+import org.eclipse.hono.deviceconnection.redis.client.RedisCache;
+import org.eclipse.hono.deviceconnection.redis.client.config.RedisConfigOptions;
+import org.eclipse.hono.deviceconnection.redis.client.config.RedisConfigProperties;
 import org.eclipse.hono.util.Strings;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
@@ -48,7 +48,6 @@ import io.opentracing.Tracer;
 import io.quarkus.runtime.configuration.ConfigurationException;
 import io.smallrye.config.ConfigMapping;
 import io.vertx.core.Vertx;
-import io.vertx.redis.client.RedisAPI;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
@@ -83,14 +82,14 @@ public class DeviceConnectionInfoProducer {
             @ConfigMapping(prefix = "hono.commandRouter.cache.remote")
             final InfinispanRemoteConfigurationOptions remoteCacheConfigurationOptions,
             @ConfigMapping(prefix = "hono.commandRouter.cache.redis")
-            final RedisConfig redisCacheConfiguration
+            final RedisConfigOptions redisCacheConfigurationOptions
             ) {
 
         final var commonCacheConfig = new CommonCacheConfig(commonCacheOptions);
         final var infinispanCacheConfig = new InfinispanRemoteConfigurationProperties(remoteCacheConfigurationOptions);
 
         if (!Strings.isNullOrEmpty(infinispanCacheConfig.getServerList()) &&
-                redisCacheConfiguration.hosts().isPresent()) {
+                redisCacheConfigurationOptions.hosts().isPresent()) {
             throw new ConfigurationException(
                     "Both hotrod (remote) and redis cache configuration exists. Only one should be provided.");
         }
@@ -103,9 +102,10 @@ public class DeviceConnectionInfoProducer {
                     commonCacheConfig);
         }
 
-        if (redisCacheConfiguration.hosts().isPresent()) {
+        if (redisCacheConfigurationOptions.hosts().isPresent()) {
             LOG.info("configuring redis cache");
-            return RedisCacheVertx.from(RedisAPI.api(VertxRedisClientFactory.create(vertx, redisCacheConfiguration)));
+            final var redisCacheConfig = new RedisConfigProperties(redisCacheConfigurationOptions);
+            return RedisCache.from(vertx, redisCacheConfig);
         }
 
         LOG.info("configuring embedded cache");
