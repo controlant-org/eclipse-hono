@@ -50,13 +50,6 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
-    <!--
-    <dependency>
-      <groupId>io.smallrye.config</groupId>
-      <artifactId>smallrye-config</artifactId>
-    </dependency>
-    -->
-
     <dependency>
       <groupId>io.vertx</groupId>
       <artifactId>vertx-core</artifactId>
