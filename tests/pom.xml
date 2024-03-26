@@ -93,6 +93,7 @@
     <hono.service-auth.disabled>false</hono.service-auth.disabled>
 
     <hono.infinispan.disabled>false</hono.infinispan.disabled>
+    <hono.redis.disabled>true</hono.redis.disabled>
 
     <!--
       Messaging related properties - Kafka is used as the default one.
@@ -462,6 +463,7 @@
       </activation>
       <properties>
         <hono.infinispan.disabled>true</hono.infinispan.disabled>
+        <hono.redis.disabled>true</hono.redis.disabled>
         <hono.command-router.config-src>embedded-cache</hono.command-router.config-src>
         <hono.command-router.max-mem>350000000</hono.command-router.max-mem>
       </properties>
@@ -476,6 +478,7 @@
         </property>
       </activation>
       <properties>
+        <hono.redis.disabled>false</hono.redis.disabled>
         <hono.infinispan.disabled>true</hono.infinispan.disabled>
         <hono.command-router.config-src>redis-cache</hono.command-router.config-src>
         <hono.command-router.max-mem>350000000</hono.command-router.max-mem>
@@ -938,6 +941,35 @@
                     </wait>
                   </run>
                 </image>
+                <!-- ##### Redis ##### -->
+                <image>
+                  <name>bitnami/redis</name>
+                  <alias>hono-redis-test</alias>
+                  <run>
+                    <skip>${hono.redis.disabled}</skip>
+                    <ports>
+                      <port>6379:6379</port>
+                    </ports>
+                    <network>
+                      <mode>custom</mode>
+                      <name>${custom.network.name}</name>
+                      <alias>redis</alias>
+                    </network>
+                    <memorySwap>1500000000</memorySwap>
+                    <memory>1500000000</memory>
+                    <log>
+                      <prefix>Redis</prefix>
+                      <color>${log.color.extra-services}</color>
+                    </log>
+                    <wait>
+                      <time>${service.startup.timeout}</time>
+                      <log>.*(Ready to accept connections).*</log>
+                    </wait>
+                    <env>
+                      <ALLOW_EMPTY_PASSWORD>yes</ALLOW_EMPTY_PASSWORD>
+                    </env>
+                  </run>
+                </image>
                 <!-- ##### Jaeger tracing component ##### -->
                 <image>
                   <name>${docker.repository}/hono-jaeger-test:${project.version}</name>
@@ -1276,35 +1308,6 @@
                       <KAFKA_REST_BOOTSTRAP_SERVERS>127.0.0.1:9092</KAFKA_REST_BOOTSTRAP_SERVERS>
                       <KAFKA_TRANSACTION_STATE_LOG_MIN_ISR>1</KAFKA_TRANSACTION_STATE_LOG_MIN_ISR>
                       <KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR>1</KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR>
-                    </env>
-                  </run>
-                </image>
-                <!-- ##### Redis ##### -->
-                <image>
-                  <name>bitnami/redis</name>
-                  <alias>hono-redis-test</alias>
-                  <run>
-                    <skip>false</skip>
-                    <ports>
-                      <port>6379:6379</port>
-                    </ports>
-                    <network>
-                      <mode>custom</mode>
-                      <name>${custom.network.name}</name>
-                      <alias>redis</alias>
-                    </network>
-                    <memorySwap>1500000000</memorySwap>
-                    <memory>1500000000</memory>
-                    <log>
-                      <prefix>Redis</prefix>
-                      <color>${log.color.extra-services}</color>
-                    </log>
-                    <wait>
-                      <time>${service.startup.timeout}</time>
-                      <log>.*(Ready to accept connections).*</log>
-                    </wait>
-                    <env>
-                      <ALLOW_EMPTY_PASSWORD>yes</ALLOW_EMPTY_PASSWORD>
                     </env>
                   </run>
                 </image>
