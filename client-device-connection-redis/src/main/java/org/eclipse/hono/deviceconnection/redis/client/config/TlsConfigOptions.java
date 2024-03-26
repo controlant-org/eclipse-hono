@@ -3,10 +3,10 @@ TODO.
  */
 package org.eclipse.hono.deviceconnection.redis.client.config;
 
-import org.eclipse.hono.deviceconnection.redis.client.config.tls.Jks;
-import org.eclipse.hono.deviceconnection.redis.client.config.tls.PemKeyCert;
-import org.eclipse.hono.deviceconnection.redis.client.config.tls.PemTrustCertificate;
-import org.eclipse.hono.deviceconnection.redis.client.config.tls.Pfx;
+import org.eclipse.hono.deviceconnection.redis.client.config.tls.JksOptions;
+import org.eclipse.hono.deviceconnection.redis.client.config.tls.PemKeyCertOptions;
+import org.eclipse.hono.deviceconnection.redis.client.config.tls.PemTrustCertOptions;
+import org.eclipse.hono.deviceconnection.redis.client.config.tls.PfxOptions;
 
 import io.smallrye.config.WithDefault;
 
@@ -33,42 +33,42 @@ public interface TlsConfig {
      * <p>
      * When enabled, {@code #trust-certificate-jks} and {@code #trust-certificate-pfx} must be disabled.
      */
-    PemTrustCertificate trustCertificatePem();
+    PemTrustCertOptions trustCertificatePem();
 
     /**
      * Trust configuration in the JKS format.
      * <p>
      * When enabled, {@code #trust-certificate-pem} and {@code #trust-certificate-pfx} must be disabled.
      */
-    Jks trustCertificateJks();
+    JksOptions trustCertificateJks();
 
     /**
      * Trust configuration in the PFX format.
      * <p>
      * When enabled, {@code #trust-certificate-jks} and {@code #trust-certificate-pem} must be disabled.
      */
-    Pfx trustCertificatePfx();
+    PfxOptions trustCertificatePfx();
 
     /**
      * Key/cert configuration in the PEM format.
      * <p>
      * When enabled, {@code key-certificate-jks} and {@code #key-certificate-pfx} must be disabled.
      */
-    PemKeyCert keyCertificatePem();
+    PemKeyCertOptions keyCertificatePem();
 
     /**
      * Key/cert configuration in the JKS format.
      * <p>
      * When enabled, {@code #key-certificate-pem} and {@code #key-certificate-pfx} must be disabled.
      */
-    Jks keyCertificateJks();
+    JksOptions keyCertificateJks();
 
     /**
      * Key/cert configuration in the PFX format.
      * <p>
      * When enabled, {@code key-certificate-jks} and {@code #key-certificate-pem} must be disabled.
      */
-    Pfx keyCertificatePfx();
+    PfxOptions keyCertificatePfx();
 
     /**
      * The hostname verification algorithm to use in case the server's identity should be checked.

@@ -13,6 +13,7 @@
 
 package org.eclipse.hono.deviceconnection.redis.client;
 
+import io.vertx.core.Vertx;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -24,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.hono.deviceconnection.common.Cache;
+import org.eclipse.hono.deviceconnection.redis.client.config.RedisConfigProperties;
 import org.eclipse.hono.util.Lifecycle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +61,18 @@ public class RedisCacheVertx implements Cache<String, String>, Lifecycle {
      * @return TODO.
      */
     public static RedisCacheVertx from(final RedisAPI api) {
+        Objects.requireNonNull(api);
+        return new RedisCacheVertx(api);
+    }
+
+    /**
+     * TODO.
+     *
+     * @param vertx TODO.
+     * @param properties TODO.
+     * @return TODO.
+     */
+    public static RedisCacheVertx from(final Vertx vertx, final RedisConfigProperties properties) {
         Objects.requireNonNull(api);
         return new RedisCacheVertx(api);
     }
