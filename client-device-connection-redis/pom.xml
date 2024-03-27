@@ -33,7 +33,7 @@
 
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-vertx</artifactId>
+      <artifactId>quarkus-redis-client</artifactId>
     </dependency>
 
     <dependency>
@@ -50,6 +50,7 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
+    <!--
     <dependency>
       <groupId>io.vertx</groupId>
       <artifactId>vertx-core</artifactId>
@@ -58,6 +59,7 @@
       <groupId>io.vertx</groupId>
       <artifactId>vertx-redis-client</artifactId>
     </dependency>
+    -->
 
     <!-- testing -->
     <dependency>

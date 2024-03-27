@@ -85,7 +85,7 @@
      Command Router related properties.
      -->
     <hono.command-router.config-src>clustered-cache</hono.command-router.config-src>
-    <hono.command-router.image>hono-service-command-router</hono.command-router.image>
+    <hono.command-router.image>hono-service-command-router-infinispan</hono.command-router.image>
     <hono.command-router.max-mem>300000000</hono.command-router.max-mem>
     <hono.command-router.java-options>${default.java-options}</hono.command-router.java-options>
     <hono.command-router.native-image-args></hono.command-router.native-image-args>
@@ -265,7 +265,7 @@
     </dependency>
     <dependency>
       <groupId>org.eclipse.hono</groupId>
-      <artifactId>hono-service-command-router</artifactId>
+      <artifactId>hono-service-command-router-base</artifactId>
       <scope>test</scope>
       <exclusions>
         <exclusion>
@@ -463,7 +463,6 @@
       </activation>
       <properties>
         <hono.infinispan.disabled>true</hono.infinispan.disabled>
-        <hono.redis.disabled>true</hono.redis.disabled>
         <hono.command-router.config-src>embedded-cache</hono.command-router.config-src>
         <hono.command-router.max-mem>350000000</hono.command-router.max-mem>
       </properties>
@@ -479,6 +478,7 @@
       </activation>
       <properties>
         <hono.redis.disabled>false</hono.redis.disabled>
+        <hono.command-router.image>hono-service-command-router-redis</hono.command-router.image>
         <hono.infinispan.disabled>true</hono.infinispan.disabled>
         <hono.command-router.config-src>redis-cache</hono.command-router.config-src>
         <hono.command-router.max-mem>350000000</hono.command-router.max-mem>
