@@ -86,20 +86,18 @@ import io.vertx.core.Verticle;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.ext.healthchecks.HealthCheckHandler;
 import io.vertx.proton.sasl.ProtonSaslAuthenticatorFactory;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 /**
  * The Quarkus based Command Router main application class.
  */
-@ApplicationScoped
-public class Application extends NotificationSupportingServiceApplication {
+public abstract class AbstractApplication extends NotificationSupportingServiceApplication {
 
     private static final String COMPONENT_NAME = "Hono Command Router";
-    private static final Logger LOG = LoggerFactory.getLogger(Application.class);
+    private static final Logger LOG = LoggerFactory.getLogger(AbstractApplication.class);
 
-    @Inject
-    DeviceConnectionInfo deviceConnectionInfo;
+    //@Inject
+    //DeviceConnectionInfo deviceConnectionInfo;
 
     @Inject
     ProtonSaslAuthenticatorFactory saslAuthenticatorFactory;
@@ -349,16 +347,22 @@ public class Application extends NotificationSupportingServiceApplication {
         return endpoint;
     }
 
+    /**
+     * TODO.
+     * @return TODO.
+     */
+    protected abstract DeviceConnectionInfo getDeviceConnectionInfo();
+
     private CommandRouterService commandRouterService() {
         final DeviceRegistrationClient registrationClient = registrationClient();
         final TenantClient tenantClient = tenantClient();
 
-        final var commandTargetMapper = CommandTargetMapper.create(registrationClient, deviceConnectionInfo, tracer);
+        final var commandTargetMapper = CommandTargetMapper.create(registrationClient, getDeviceConnectionInfo(), tracer);
         return new CommandRouterServiceImpl(
                 amqpServerProperties,
                 registrationClient,
                 tenantClient,
-                deviceConnectionInfo,
+                getDeviceConnectionInfo(),
                 commandConsumerFactoryProvider(tenantClient, commandTargetMapper),
                 eventSenderProvider(),
                 adapterInstanceStatusService,

@@ -12,7 +12,7 @@
  */
 
 
-package org.eclipse.hono.commandrouter.app;
+package org.eclipse.hono.commandrouter.redis.app;
 
 import java.util.Optional;
 
