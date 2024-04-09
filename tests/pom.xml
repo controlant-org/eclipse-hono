@@ -915,7 +915,7 @@
                       <port>hono.infinispan.port:${hono.infinispan.port}</port>
                     </ports>
                     <env>
-                      <!--
+                      <!-- 
                         In order to support running on a rootless Docker daemon which uses cgroups v2 for
                         enforcing resource limits, and because the Infinispan native server image has been
                         created using Java 11 (which doesn't support cgroups v2), we need to (also) explicitly limit
