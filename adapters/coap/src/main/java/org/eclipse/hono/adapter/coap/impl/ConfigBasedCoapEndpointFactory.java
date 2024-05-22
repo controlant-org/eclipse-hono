@@ -238,6 +238,11 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
         networkConfig.set(DtlsConfig.DTLS_RECEIVER_THREAD_COUNT, config.getConnectorThreads());
         networkConfig.set(DtlsConfig.DTLS_CONNECTOR_THREAD_COUNT, config.getDtlsThreads());
         networkConfig.set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, config.getDtlsConnectionIdLength());
+        /*
+        TODO: investigate whether we should also set DtlsConfig.DTLS_CONNECTION_ID_NODE_ID here:
+        If DTLS_CONNECTION_ID_LENGTH enables the use of a connection id, this node id could be used to configure the generation of connection ids specific for node in a multi-node deployment (cluster). The value is used as first byte in generated connection ids.
+        Do we have a multi-node deployment (cluster)? How would we find the node id?
+         */
         return loadConfiguration(config.getNetworkConfig(), networkConfig)
                 .compose(c -> loadConfiguration(config.getSecureNetworkConfig(), c));
     }
