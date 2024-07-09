@@ -511,6 +511,8 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
      * values than peers. E.g. 65000 peers, chose not 2 bytes, chose at lease 3
      * bytes!</li>
      * </ul>
+     *
+     * @param dtlsConnectionIdLength The length of DTLS connection ID (CID) used.
      */
     public final void setDtlsConnectionIdLength(final Integer dtlsConnectionIdLength) {
         this.dtlsConnectionIdLength = dtlsConnectionIdLength;

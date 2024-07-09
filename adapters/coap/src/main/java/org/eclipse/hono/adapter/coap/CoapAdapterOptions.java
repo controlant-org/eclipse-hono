@@ -171,6 +171,6 @@ public interface CoapAdapterOptions {
      *
      * @return DTLS connection ID length in bytes, null disabled, 0 enables support without active use of CID.
      */
-    @WithDefault("null")
-    int dtlsConnectionIdLength();
+    @WithDefault("6")
+    Integer dtlsConnectionIdLength();
 }
