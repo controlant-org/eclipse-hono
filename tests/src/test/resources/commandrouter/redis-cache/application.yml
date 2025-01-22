@@ -15,7 +15,7 @@ hono:
       insecurePortBindAddress: "0.0.0.0"
     cache:
       redis:
-        hosts: "redis://redis:6379"
+        hosts: "redis://redis-bogus:6379"
   messaging:
     name: 'Hono Command Router'
     host: "${hono.amqp-network.host}"
