@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
+import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.Response;
 
@@ -41,26 +42,32 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
     private static final Logger LOG = LoggerFactory.getLogger(RedisCache.class);
 
     private final RedisAPI api;
+    private final Redis redisClient;
 
     /**
      * TODO.
      *
      * @param api TODO.
+     * @param redisClient TODO.
      */
-    private RedisCache(final RedisAPI api) {
+    private RedisCache(final RedisAPI api, final Redis redisClient) {
         Objects.requireNonNull(api);
+        Objects.requireNonNull(redisClient);
         this.api = api;
+        this.redisClient = redisClient;
     }
 
     /**
      * TODO.
      *
      * @param api TODO.
+     * @param redisClient TODO.
      * @return TODO.
      */
-    public static RedisCache from(final RedisAPI api) {
+    public static RedisCache from(final RedisAPI api, final Redis redisClient) {
         Objects.requireNonNull(api);
-        return new RedisCache(api);
+        Objects.requireNonNull(redisClient);
+        return new RedisCache(api, redisClient);
     }
 
     @Override
@@ -70,7 +77,6 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
 
     @Override
     public Future<Void> stop() {
-        api.close();
         return Future.succeededFuture();
     }
 
@@ -124,22 +130,27 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         Objects.requireNonNull(lifespanUnit);
 
         final long millis = lifespanUnit.toMillis(lifespan);
-        return api.multi()
-                .compose(ignored -> {
-                    final List<Future<Response>> futures = new ArrayList<>(data.size());
-                    data.forEach((k, v) -> {
-                        final List<String> params = new ArrayList<>(List.of(String.valueOf(k), String.valueOf(v)));
-                        if (millis > 0) {
-                            params.addAll(List.of("PX", String.valueOf(millis)));
-                        }
-                        futures.add(api.set(params));
-                    });
-                    return Future.all(Collections.unmodifiableList(futures));
-                })
-                .compose(ignored -> api.exec())
-                // null reply means transaction aborted
-                .map(Objects::nonNull)
-                .mapEmpty();
+        return redisClient.connect()
+                .compose(conn -> {
+                    final RedisAPI connApi = RedisAPI.api(conn);
+                    return connApi.multi()
+                            .compose(ignored -> {
+                                final List<Future<Response>> futures = new ArrayList<>(data.size());
+                                data.forEach((k, v) -> {
+                                    final List<String> params = new ArrayList<>(List.of(String.valueOf(k), String.valueOf(v)));
+                                    if (millis > 0) {
+                                        params.addAll(List.of("PX", String.valueOf(millis)));
+                                    }
+                                    futures.add(connApi.set(params));
+                                });
+                                return Future.all(Collections.unmodifiableList(futures));
+                            })
+                            .compose(ignored -> connApi.exec())
+                            // null reply means transaction aborted
+                            .map(Objects::nonNull)
+                            .eventually(() -> conn.close())
+                            .mapEmpty();
+                });
     }
 
     @Override
@@ -155,22 +166,27 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         Objects.requireNonNull(key);
         Objects.requireNonNull(value);
 
-        return api.watch(List.of(key))
-                .compose(ignored -> api.get(key))
-                .compose(response -> {
-                    if (response == null) {
-                        // key does not exist
-                        return Future.succeededFuture(false);
-                    }
-                    if (String.valueOf(response).equals(value)) {
-                        return api.multi()
-                                .compose(ignored -> api.del(List.of(key)))
-                                .compose(ignored -> api.exec())
-                                // null reply means transaction aborted
-                                .map(Objects::nonNull);
-                    } else {
-                        return Future.succeededFuture(false);
-                    }
+        return redisClient.connect()
+                .compose(conn -> {
+                    final RedisAPI connApi = RedisAPI.api(conn);
+                    return connApi.watch(List.of(key))
+                            .compose(ignored -> connApi.get(key))
+                            .compose(response -> {
+                                if (response == null) {
+                                    // key does not exist
+                                    return Future.succeededFuture(false);
+                                }
+                                if (String.valueOf(response).equals(value)) {
+                                    return connApi.multi()
+                                            .compose(ignored -> connApi.del(List.of(key)))
+                                            .compose(ignored -> connApi.exec())
+                                            // null reply means transaction aborted
+                                            .map(Objects::nonNull);
+                                } else {
+                                    return Future.succeededFuture(false);
+                                }
+                            })
+                            .eventually(() -> conn.close());
                 });
     }
 
