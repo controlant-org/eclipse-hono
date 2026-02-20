@@ -542,22 +542,6 @@
             </executions>
           </plugin>
           <plugin>
-            <groupId>org.codehaus.mojo</groupId>
-            <artifactId>properties-maven-plugin</artifactId>
-            <executions>
-              <execution>
-                <phase>post-integration-test</phase>
-                <goals>
-                  <goal>write-project-properties</goal>
-                </goals>
-                <configuration>
-                  <outputFile>${project.build.directory}/docker/kafka.port.properties</outputFile>
-                  <includedPropertyKeys>docker.host.address,kafka.port</includedPropertyKeys>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-          <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-failsafe-plugin</artifactId>
             <configuration>
@@ -1247,8 +1231,9 @@
                   <run>
                     <skip>${hono.kafka-messaging.disabled}</skip>
                     <ports>
-                      <port>kafka.port:9094</port>
+                      <port>+docker.host.address:kafka.port:9094</port>
                     </ports>
+                    <portPropertyFile>${project.build.directory}/docker/kafka.port.properties</portPropertyFile>
                     <network>
                       <mode>custom</mode>
                       <name>${custom.network.name}</name>
