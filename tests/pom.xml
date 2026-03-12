@@ -973,8 +973,8 @@
                       We can thus detect OOM problems when running locally as opposed to only
                       later on CI infrastructure.
                      -->
-                    <memorySwap>314572800</memorySwap>
-                    <memory>314572800</memory>
+                    <memorySwap>419430400</memorySwap>
+                    <memory>419430400</memory>
                     <env>
                       <LOG_LEVEL>info</LOG_LEVEL>
                       <MEMORY_MAX_TRACES>2000</MEMORY_MAX_TRACES>

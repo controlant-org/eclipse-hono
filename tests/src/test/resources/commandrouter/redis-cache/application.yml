@@ -16,6 +16,8 @@ hono:
     cache:
       redis:
         hosts: "redis://redis:6379"
+        #max-pool-size: 8
+        #max-pool-waiting: 40
   messaging:
     name: 'Hono Command Router'
     host: "${hono.amqp-network.host}"
@@ -76,6 +78,11 @@ hono:
         delivery.timeout.ms: ${kafka-client.producer.delivery-timeout-ms}
 
 quarkus:
+  micrometer:
+  #  enabled: true
+    binder:
+      redis:
+        enabled: true
   otel:
     exporter:
       otlp:
