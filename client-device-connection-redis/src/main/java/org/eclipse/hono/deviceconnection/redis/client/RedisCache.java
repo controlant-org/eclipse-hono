@@ -30,11 +30,21 @@ import org.slf4j.LoggerFactory;
 
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
-import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 
 /**
- * TODO.
+ * A vert.x based Redis implementation of Hono's {@link Cache} interface.
+ * <p>
+ * All operations are implemented as single Redis commands, using server-side Lua
+ * scripts where atomicity across multiple commands is required. No operation
+ * establishes connection-level state (such as {@code WATCH} or {@code MULTI}):
+ * the underlying vert.x Redis client recycles pooled connections without
+ * resetting them, so any leaked per-connection state would corrupt unrelated
+ * subsequent operations borrowing the same connection.
+ * <p>
+ * Executing Lua scripts requires the {@code EVAL} command (Redis 2.6 or later)
+ * to be permitted for the configured user ({@code @scripting} ACL category);
+ * {@link #start()} verifies this and fails otherwise.
  */
 public class RedisCache implements Cache<String, String>, Lifecycle {
 
@@ -63,32 +73,20 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
             return #KEYS""";
 
     private final RedisAPI api;
-    private final Redis redisClient;
 
-    /**
-     * TODO.
-     *
-     * @param api TODO.
-     * @param redisClient TODO.
-     */
-    private RedisCache(final RedisAPI api, final Redis redisClient) {
-        Objects.requireNonNull(api);
-        Objects.requireNonNull(redisClient);
-        this.api = api;
-        this.redisClient = redisClient;
+    private RedisCache(final RedisAPI api) {
+        this.api = Objects.requireNonNull(api);
     }
 
     /**
-     * TODO.
+     * Creates a cache instance backed by the given Redis API.
      *
-     * @param api TODO.
-     * @param redisClient TODO.
-     * @return TODO.
+     * @param api The API instance to use for accessing Redis.
+     * @return The cache.
+     * @throws NullPointerException if api is {@code null}.
      */
-    public static RedisCache from(final RedisAPI api, final Redis redisClient) {
-        Objects.requireNonNull(api);
-        Objects.requireNonNull(redisClient);
-        return new RedisCache(api, redisClient);
+    public static RedisCache from(final RedisAPI api) {
+        return new RedisCache(api);
     }
 
     @Override
@@ -197,7 +195,9 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         return api.mget(keyList)
                 .compose(values -> {
                     values.forEach(i -> {
-                        if (i != null) { // TODO: this is kinda strange but some results are null and the BasicCache does not include those in the returned result. Ask about/investigate.
+                        // a null entry means the key does not exist; omit it from the
+                        // result, matching the behavior of the Infinispan based caches
+                        if (i != null) {
                             result.put(keyList.removeFirst(), i.toString());
                         } else {
                             keyList.removeFirst();
