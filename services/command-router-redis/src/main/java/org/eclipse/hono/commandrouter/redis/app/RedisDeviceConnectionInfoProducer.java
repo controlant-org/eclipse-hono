@@ -37,8 +37,9 @@ import jakarta.inject.Singleton;
 /**
  * A producer of an application scoped {@link DeviceConnectionInfo} instance.
  * <p>
- * The underlying cache implementation will store data in-memory or in a remote cache, depending
- * on whether a remote cache config with a non-empty server list is used or not.
+ * The underlying cache implementation stores data in a remote Redis server. The connection to that
+ * server is configured using the {@code hono.commandRouter.cache.redis} properties described in the
+ * <em>Data Grid Connection Configuration</em> section of the Command Router admin guide.
  */
 @ApplicationScoped
 public class RedisDeviceConnectionInfoProducer {

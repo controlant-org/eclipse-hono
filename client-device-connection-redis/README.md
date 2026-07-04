@@ -4,6 +4,11 @@ A Redis based implementation of Hono's `Cache` interface for storing device
 connection information, used by the Redis variant of the Command Router
 (`services/command-router-redis`).
 
+> **Experimental:** This is a recent addition that has not yet undergone
+> extensive real-world validation. It is considered experimental and its
+> configuration and behavior may change in future releases. Using it in
+> production environments is not recommended at this stage.
+
 ## Requirements
 
 | Requirement | Details |

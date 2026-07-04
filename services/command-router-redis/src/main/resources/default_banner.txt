@@ -8,6 +8,6 @@
                 | |
                 |_|
 
-Eclipse Hono Redis Based Command Router
+${project.name} ${project.version}
 
-Go to https://www.eclipse.org/hono for more information.
+Go to ${project.url} for more information.
