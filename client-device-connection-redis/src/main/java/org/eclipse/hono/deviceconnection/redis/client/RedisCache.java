@@ -201,11 +201,11 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         final Map<String, String> result = new HashMap<>(keyList.size());
         return api.mget(keyList)
                 .compose(values -> {
-                    values.forEach(i -> {
+                    values.forEach(value -> {
                         // a null entry means the key does not exist; omit it from the
                         // result, matching the behavior of the Infinispan based caches
-                        if (i != null) {
-                            result.put(keyList.removeFirst(), i.toString(StandardCharsets.UTF_8));
+                        if (value != null) {
+                            result.put(keyList.removeFirst(), value.toString(StandardCharsets.UTF_8));
                         } else {
                             keyList.removeFirst();
                         }
