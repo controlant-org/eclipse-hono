@@ -16,10 +16,13 @@ hono:
     cache:
       redis:
         hosts: "redis://redis:6379"
-        #max-pool-size: 8
-        #max-pool-waiting: 40
+        # The pool settings below repeat the values the service image already applies. They do not
+        # change the defaults, but are stated explicitly so the pool sizing the integration tests
+        # run with is visible in one place.
+        max-pool-size: 6        # Quarkus default; maximum number of Redis connections in the pool
+        max-pool-waiting: 512   # raised from the Quarkus default of 24 by the service to absorb bursts of command lookups
   messaging:
-    name: 'Hono Command Router'
+    name: "Hono Command Router"
     host: "${hono.amqp-network.host}"
     port: 5673
     amqpHostname: "hono-internal"
@@ -30,7 +33,7 @@ hono:
     flowLatency: ${flow.latency}
     requestTimeout: ${request.timeout}
   registration:
-    name: 'Hono Command Router'
+    name: "Hono Command Router"
     host: "${hono.registration.host}"
     port: 5672
     username: "command-router@HONO"
@@ -39,7 +42,7 @@ hono:
     flowLatency: ${flow.latency}
     requestTimeout: ${request.timeout}
   tenant:
-    name: 'Hono Command Router'
+    name: "Hono Command Router"
     host: "${hono.registration.host}"
     port: 5672
     username: "command-router@HONO"
@@ -48,7 +51,7 @@ hono:
     flowLatency: ${flow.latency}
     requestTimeout: ${request.timeout}
   command:
-    name: 'Hono Command Router'
+    name: "Hono Command Router"
     host: "${hono.amqp-network.host}"
     port: 5673
     amqpHostname: "hono-internal"
@@ -79,7 +82,7 @@ hono:
 
 quarkus:
   micrometer:
-  #  enabled: true
+    #  enabled: true
     binder:
       redis:
         enabled: true
