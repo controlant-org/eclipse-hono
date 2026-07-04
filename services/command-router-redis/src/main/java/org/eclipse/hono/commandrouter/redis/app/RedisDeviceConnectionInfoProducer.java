@@ -28,7 +28,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.opentracing.Tracer;
-import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
@@ -55,9 +54,9 @@ public class RedisDeviceConnectionInfoProducer {
     }
 
     @Produces
-    Cache<String, String> cache(final RedisAPI redisAPI, final Redis redisClient) {
-        LOG.info("configuring redis cache");
-        return RedisCache.from(redisAPI, redisClient);
+    Cache<String, String> cache(final RedisAPI redisAPI) {
+        LOG.info("configuring Redis cache");
+        return RedisCache.from(redisAPI);
     }
 
     @Produces

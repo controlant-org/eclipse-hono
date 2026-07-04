@@ -65,7 +65,7 @@ class RedisCacheTest {
                 .setMaxPoolSize(1)
                 .setMaxPoolWaiting(32));
         api = RedisAPI.api(redisClient);
-        cache = RedisCache.from(api, redisClient);
+        cache = RedisCache.from(api);
     }
 
     @AfterEach
