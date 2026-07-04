@@ -18,6 +18,7 @@ import static com.google.common.truth.Truth.assertThat;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -145,6 +146,90 @@ class RedisCacheTest {
         cache.get(randomKey("absent"))
                 .onComplete(ctx.succeeding(value -> {
                     ctx.verify(() -> assertThat(value).isNull());
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that removing an existing key with the matching value succeeds
+     * and actually deletes the entry.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testRemoveSucceedsForMatchingValue(final VertxTestContext ctx) {
+        final String key = randomKey("remove-match");
+        cache.put(key, "the-value")
+                .compose(ok -> cache.remove(key, "the-value"))
+                .compose(removed -> {
+                    ctx.verify(() -> assertThat(removed).isTrue());
+                    return cache.get(key);
+                })
+                .onComplete(ctx.succeeding(value -> {
+                    ctx.verify(() -> assertThat(value).isNull());
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that removing a key with a non-matching value returns false
+     * and leaves the entry intact.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testRemoveFailsForNonMatchingValue(final VertxTestContext ctx) {
+        final String key = randomKey("remove-mismatch");
+        cache.put(key, "the-value")
+                .compose(ok -> cache.remove(key, "some-other-value"))
+                .compose(removed -> {
+                    ctx.verify(() -> assertThat(removed).isFalse());
+                    return cache.get(key);
+                })
+                .onComplete(ctx.succeeding(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("the-value"));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that removing a key that does not exist returns false.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testRemoveFailsForMissingKey(final VertxTestContext ctx) {
+        cache.remove(randomKey("remove-absent"), "any-value")
+                .onComplete(ctx.succeeding(removed -> {
+                    ctx.verify(() -> assertThat(removed).isFalse());
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that a remove attempt with a non-matching value does not leak
+     * connection state that corrupts subsequent operations on the same pooled
+     * connection.
+     * <p>
+     * With the WATCH/MULTI based implementation this sequence fails: the failed
+     * remove leaves a WATCH armed on the (single) pooled connection, the
+     * subsequent put touches the watched key, and the putAll transaction is
+     * then silently aborted — the entry is never stored although the future
+     * succeeds.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testRemoveWithNonMatchingValueDoesNotPoisonPooledConnection(final VertxTestContext ctx) {
+        final String watchedKey = randomKey("poison-watched");
+        final String victimKey = randomKey("poison-victim");
+        cache.put(watchedKey, "value-1")
+                .compose(ok -> cache.remove(watchedKey, "non-matching-value"))
+                .compose(removed -> cache.put(watchedKey, "value-2"))
+                .compose(ok -> cache.putAll(Map.of(victimKey, "victim-value"), 60_000, TimeUnit.MILLISECONDS))
+                .compose(ok -> cache.get(victimKey))
+                .onComplete(ctx.succeeding(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("victim-value"));
                     ctx.completeNow();
                 }));
     }

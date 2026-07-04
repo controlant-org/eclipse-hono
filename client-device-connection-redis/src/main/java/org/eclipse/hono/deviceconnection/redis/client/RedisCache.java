@@ -42,6 +42,17 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
 
     private static final Logger LOG = LoggerFactory.getLogger(RedisCache.class);
 
+    /**
+     * Atomically deletes a key only if it currently holds the given value.
+     * Returns the number of deleted keys (1 or 0).
+     */
+    private static final String COMPARE_AND_DELETE_SCRIPT = """
+            if redis.call('get', KEYS[1]) == ARGV[1] then
+                return redis.call('del', KEYS[1])
+            else
+                return 0
+            end""";
+
     private final RedisAPI api;
     private final Redis redisClient;
 
@@ -167,28 +178,8 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         Objects.requireNonNull(key);
         Objects.requireNonNull(value);
 
-        return redisClient.connect()
-                .compose(conn -> {
-                    final RedisAPI connApi = RedisAPI.api(conn);
-                    return connApi.watch(List.of(key))
-                            .compose(ignored -> connApi.get(key))
-                            .compose(response -> {
-                                if (response == null) {
-                                    // key does not exist
-                                    return Future.succeededFuture(false);
-                                }
-                                if (String.valueOf(response).equals(value)) {
-                                    return connApi.multi()
-                                            .compose(ignored -> connApi.del(List.of(key)))
-                                            .compose(ignored -> connApi.exec())
-                                            // null reply means transaction aborted
-                                            .map(Objects::nonNull);
-                                } else {
-                                    return Future.succeededFuture(false);
-                                }
-                            })
-                            .eventually(() -> conn.close());
-                });
+        return api.eval(List.of(COMPARE_AND_DELETE_SCRIPT, "1", key, value))
+                .map(response -> response.toInteger() == 1);
     }
 
     @Override
