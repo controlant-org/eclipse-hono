@@ -15,7 +15,6 @@ package org.eclipse.hono.deviceconnection.redis.client;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -33,7 +32,6 @@ import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
-import io.vertx.redis.client.Response;
 
 /**
  * TODO.
@@ -52,6 +50,17 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
             else
                 return 0
             end""";
+
+    /**
+     * Atomically sets each key to its corresponding value with a shared
+     * time-to-live. ARGV[1] holds the TTL in milliseconds, ARGV[i + 1] the
+     * value for KEYS[i].
+     */
+    private static final String PUT_ALL_WITH_LIFESPAN_SCRIPT = """
+            for i = 1, #KEYS do
+                redis.call('set', KEYS[i], ARGV[i + 1], 'PX', ARGV[1])
+            end
+            return #KEYS""";
 
     private final RedisAPI api;
     private final Redis redisClient;
@@ -126,6 +135,9 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
     public Future<Void> putAll(final Map<? extends String, ? extends String> data) {
         Objects.requireNonNull(data);
 
+        if (data.isEmpty()) {
+            return Future.succeededFuture();
+        }
         final List<String> keyValues = new ArrayList<>(data.size() * 2);
         data.forEach((k, v) -> {
             keyValues.add(k);
@@ -142,27 +154,21 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         Objects.requireNonNull(lifespanUnit);
 
         final long millis = lifespanUnit.toMillis(lifespan);
-        return redisClient.connect()
-                .compose(conn -> {
-                    final RedisAPI connApi = RedisAPI.api(conn);
-                    return connApi.multi()
-                            .compose(ignored -> {
-                                final List<Future<Response>> futures = new ArrayList<>(data.size());
-                                data.forEach((k, v) -> {
-                                    final List<String> params = new ArrayList<>(List.of(String.valueOf(k), String.valueOf(v)));
-                                    if (millis > 0) {
-                                        params.addAll(List.of("PX", String.valueOf(millis)));
-                                    }
-                                    futures.add(connApi.set(params));
-                                });
-                                return Future.all(Collections.unmodifiableList(futures));
-                            })
-                            .compose(ignored -> connApi.exec())
-                            // null reply means transaction aborted
-                            .map(Objects::nonNull)
-                            .eventually(() -> conn.close())
-                            .mapEmpty();
-                });
+        if (millis <= 0 || data.isEmpty()) {
+            return putAll(data);
+        }
+        final List<String> args = new ArrayList<>(data.size() * 2 + 3);
+        args.add(PUT_ALL_WITH_LIFESPAN_SCRIPT);
+        args.add(String.valueOf(data.size()));
+        final List<String> values = new ArrayList<>(data.size());
+        data.forEach((k, v) -> {
+            args.add(k);
+            values.add(v);
+        });
+        args.add(String.valueOf(millis));
+        args.addAll(values);
+        return api.eval(args)
+                .mapEmpty();
     }
 
     @Override

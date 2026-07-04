@@ -233,4 +233,57 @@ class RedisCacheTest {
                     ctx.completeNow();
                 }));
     }
+
+    /**
+     * Verifies that entries stored via putAll with a lifespan are readable
+     * before the lifespan ends and are expired afterwards.
+     *
+     * @param vertx The vert.x instance.
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutAllWithLifespanExpiresEntries(final Vertx vertx, final VertxTestContext ctx) {
+        final String keyA = randomKey("expire-a");
+        final String keyB = randomKey("expire-b");
+        cache.putAll(Map.of(keyA, "value-a", keyB, "value-b"), 500, TimeUnit.MILLISECONDS)
+                .compose(ok -> cache.getAll(Set.of(keyA, keyB)))
+                .onComplete(ctx.succeeding(values -> {
+                    ctx.verify(() -> assertThat(values).hasSize(2));
+                    vertx.setTimer(1000, tid -> cache.getAll(Set.of(keyA, keyB))
+                            .onComplete(ctx.succeeding(expired -> {
+                                ctx.verify(() -> assertThat(expired).isEmpty());
+                                ctx.completeNow();
+                            })));
+                }));
+    }
+
+    /**
+     * Verifies that a non-positive lifespan stores entries without expiry,
+     * as the Cache contract defines a negative lifespan as unlimited.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutAllWithNegativeLifespanStoresWithoutExpiry(final VertxTestContext ctx) {
+        final String key = randomKey("no-expiry");
+        cache.putAll(Map.of(key, "persistent"), -1, TimeUnit.MILLISECONDS)
+                .compose(ok -> cache.get(key))
+                .onComplete(ctx.succeeding(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("persistent"));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that putAll with an empty map succeeds without contacting Redis
+     * in a way that would fail (MSET requires at least one pair).
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutAllWithEmptyMapSucceeds(final VertxTestContext ctx) {
+        cache.putAll(Map.of())
+                .compose(ok -> cache.putAll(Map.of(), 500, TimeUnit.MILLISECONDS))
+                .onComplete(ctx.succeedingThenComplete());
+    }
 }
