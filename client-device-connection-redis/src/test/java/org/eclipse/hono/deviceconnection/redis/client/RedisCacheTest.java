@@ -15,6 +15,7 @@ package org.eclipse.hono.deviceconnection.redis.client;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -285,5 +286,40 @@ class RedisCacheTest {
         cache.putAll(Map.of())
                 .compose(ok -> cache.putAll(Map.of(), 500, TimeUnit.MILLISECONDS))
                 .onComplete(ctx.succeedingThenComplete());
+    }
+
+    /**
+     * Verifies that start() succeeds against a Redis server that permits
+     * Lua scripting.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testStartSucceedsWhenScriptingIsAllowed(final VertxTestContext ctx) {
+        cache.start().onComplete(ctx.succeedingThenComplete());
+    }
+
+    /**
+     * Verifies that start() fails with a meaningful message if the configured
+     * user is not allowed to run Lua scripts (denied @scripting ACL category),
+     * instead of failing obscurely at runtime on the first remove/putAll.
+     *
+     * @param vertx The vert.x instance.
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testStartFailsWhenScriptingIsDenied(final Vertx vertx, final VertxTestContext ctx) {
+        final Redis restrictedClient = Redis.createClient(vertx, new RedisOptions()
+                .setConnectionString("redis://noscript:secret@%s:%d"
+                        .formatted(REDIS.getHost(), REDIS.getMappedPort(6379)))
+                .setMaxPoolSize(1));
+        api.acl(List.of("SETUSER", "noscript", "on", ">secret", "~*", "+@all", "-@scripting"))
+                .compose(ok -> RedisCache.from(RedisAPI.api(restrictedClient)).start())
+                .onComplete(result -> restrictedClient.close())
+                .onComplete(ctx.failing(t -> {
+                    ctx.verify(() -> assertThat(t.getMessage()).contains("scripting"));
+                    api.acl(List.of("DELUSER", "noscript"))
+                            .onComplete(ignored -> ctx.completeNow());
+                }));
     }
 }
