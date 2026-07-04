@@ -91,7 +91,13 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
 
     @Override
     public Future<Void> start() {
-        return checkForCacheAvailability().mapEmpty();
+        return checkForCacheAvailability()
+                .compose(ok -> api.eval(List.of("return 1", "0"))
+                        .recover(t -> Future.failedFuture(new IllegalStateException(
+                                "the Redis server does not permit Lua scripting (EVAL) for the configured user; "
+                                        + "this cache requires the @scripting command category to be allowed",
+                                t))))
+                .mapEmpty();
     }
 
     @Override
