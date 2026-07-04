@@ -133,4 +133,19 @@ class RedisCacheTest {
                     ctx.completeNow();
                 }));
     }
+
+    /**
+     * Verifies that getting a key that does not exist succeeds with a null
+     * value as defined by the Cache interface contract.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testGetSucceedsWithNullForMissingKey(final VertxTestContext ctx) {
+        cache.get(randomKey("absent"))
+                .onComplete(ctx.succeeding(value -> {
+                    ctx.verify(() -> assertThat(value).isNull());
+                    ctx.completeNow();
+                }));
+    }
 }
