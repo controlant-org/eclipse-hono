@@ -314,12 +314,12 @@ class RedisCacheTest {
                         .formatted(REDIS.getHost(), REDIS.getMappedPort(6379)))
                 .setMaxPoolSize(1));
         api.acl(List.of("SETUSER", "noscript", "on", ">secret", "~*", "+@all", "-@scripting"))
-                .compose(ok -> RedisCache.from(RedisAPI.api(restrictedClient)).start())
-                .onComplete(result -> restrictedClient.close())
+                .compose(ok -> RedisCache.from(RedisAPI.api(restrictedClient)).start()
+                        .onComplete(result -> restrictedClient.close())
+                        .eventually(() -> api.acl(List.of("DELUSER", "noscript"))))
                 .onComplete(ctx.failing(t -> {
                     ctx.verify(() -> assertThat(t.getMessage()).contains("scripting"));
-                    api.acl(List.of("DELUSER", "noscript"))
-                            .onComplete(ignored -> ctx.completeNow());
+                    ctx.completeNow();
                 }));
     }
 }
