@@ -35,8 +35,6 @@ import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.Response;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 /**
  * TODO.
  */
@@ -161,7 +159,7 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         Objects.requireNonNull(key);
 
         return api.get(key)
-                .map(value -> value.toString(UTF_8));
+                .map(value -> value.toString(StandardCharsets.UTF_8));
     }
 
     @Override
