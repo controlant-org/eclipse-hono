@@ -48,7 +48,7 @@ import io.vertx.redis.client.RedisOptions;
  */
 @Testcontainers(disabledWithoutDocker = true)
 @ExtendWith(VertxExtension.class)
-@Timeout(value = 10, timeUnit = java.util.concurrent.TimeUnit.SECONDS)
+@Timeout(value = 10, timeUnit = TimeUnit.SECONDS)
 class RedisCacheTest {
 
     @Container
@@ -269,8 +269,12 @@ class RedisCacheTest {
         final String key = randomKey("no-expiry");
         cache.putAll(Map.of(key, "persistent"), -1, TimeUnit.MILLISECONDS)
                 .compose(ok -> cache.get(key))
-                .onComplete(ctx.succeeding(value -> {
+                .compose(value -> {
                     ctx.verify(() -> assertThat(value).isEqualTo("persistent"));
+                    return api.pttl(key);
+                })
+                .onComplete(ctx.succeeding(pttl -> {
+                    ctx.verify(() -> assertThat(pttl.toLong()).isEqualTo(-1L));
                     ctx.completeNow();
                 }));
     }

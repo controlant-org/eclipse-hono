@@ -97,7 +97,8 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
                                 "the Redis server does not permit Lua scripting (EVAL) for the configured user; "
                                         + "this cache requires the @scripting command category to be allowed",
                                 t))))
-                .mapEmpty();
+                .<Void>mapEmpty()
+                .onFailure(t -> LOG.error("Redis cache failed to start", t));
     }
 
     @Override
@@ -204,7 +205,7 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
                         // a null entry means the key does not exist; omit it from the
                         // result, matching the behavior of the Infinispan based caches
                         if (i != null) {
-                            result.put(keyList.removeFirst(), i.toString());
+                            result.put(keyList.removeFirst(), i.toString(StandardCharsets.UTF_8));
                         } else {
                             keyList.removeFirst();
                         }
