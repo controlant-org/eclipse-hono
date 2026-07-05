@@ -176,11 +176,17 @@ determine the overall number of responses that can be cached.
 
 ## Data Grid Connection Configuration
 
-The Command Router component requires either an embedded cache or a remote
-data grid, using the Infinispan Hotrod protocol to store device information.
+The Command Router component uses a cache to store device connection information. Two implementations are
+provided, each built into its own Docker image. A deployment uses exactly one of them:
+
+* the *Infinispan* based variant (`hono-service-command-router-infinispan`) which uses either an embedded cache or a
+  remote data grid, accessed via the Infinispan Hotrod protocol, and
+* the *Redis* based variant (`hono-service-command-router-redis`) which uses a remote Redis server.
+
+### Infinispan cache
 
 The following table provides an overview of the configuration variables and corresponding command line options for
-configuring the common aspects of the service:
+configuring the common aspects of the Infinispan based variant:
 
 | OS Environment Variable<br>Java System Property | Mandatory | Default | Description                                                             |
 | :------------------------------------------ | :-------: | :------ | :-----------------------------------------------------------------------|
@@ -192,7 +198,7 @@ The type of cache (embedded or remote) is determined during startup by means of 
 configuration variable. If the variable has a non empty value, a [remote cache]({{< relref "#remote-cache" >}}) is configured.
 Otherwise, an [embedded cache]({{< relref "#embedded-cache" >}}) is configured.
 
-### Remote cache
+#### Remote cache
 
 The following table provides an overview of the configuration variables and corresponding system properties for configuring the connection to the data grid:
 
@@ -231,13 +237,47 @@ The following table provides an overview of the configuration variables and corr
 
 See also the [Infinispan Hotrod client documentation](https://docs.jboss.org/infinispan/13.0/apidocs/org/infinispan/client/hotrod/configuration/package-summary.html#package.description).
 
-### Embedded cache
+#### Embedded cache
 
 The following table provides an overview of the configuration variables and corresponding system properties for configuring the embedded cache:
 
 | OS Environment Variable<br>Java System Property | Mandatory | Default | Description                                                             |
 | :------------------------------------------ | :-------: | :------ | :-----------------------------------------------------------------------|
 | `HONO_COMMANDROUTER_CACHE_EMBEDDED_CONFIGURATIONFILE`<br>`hono.commandRouter.cache.embedded.configurationFile` | yes | - | The absolute path to an Infinispan configuration file. Also see the [Infinispan Configuration Schema](https://docs.jboss.org/infinispan/13.0/configdocs/infinispan-config-13.0.html). |
+
+### Redis cache
+
+{{% notice warning %}}
+The Redis based variant is a recent addition that has not yet undergone extensive real-world validation. It is
+considered experimental and its configuration and behavior may change in future releases. Using it in production
+environments is not recommended at this stage.
+{{% /notice %}}
+
+The Redis based variant (`hono-service-command-router-redis`) stores device connection information in a remote Redis
+server. It builds on the [Quarkus Redis client](https://quarkus.io/guides/redis-reference) and exposes that client's
+configuration properties under the `hono.commandRouter.cache.redis` prefix.
+
+The following table provides an overview of the most commonly used configuration variables and corresponding system
+properties for configuring the connection to the Redis server:
+
+| OS Environment Variable<br>Java System Property | Mandatory | Default | Description                                                             |
+| :------------------------------------------ | :-------: | :------ | :-----------------------------------------------------------------------|
+| `HONO_COMMANDROUTER_CACHE_REDIS_HOSTS`<br>`hono.commandRouter.cache.redis.hosts` | no | `redis://localhost:6379` | The connection URI of the Redis server, in the form `redis://[username:password@]host:port`. For a TLS secured connection use the `rediss://` scheme. The default only works for a Redis server running on the local host, so this needs to be set for most deployments. |
+| `HONO_COMMANDROUTER_CACHE_REDIS_PASSWORD`<br>`hono.commandRouter.cache.redis.password` | no | - | The password to use for authenticating to the server. May alternatively be provided as part of the connection URI. |
+| `HONO_COMMANDROUTER_CACHE_REDIS_MAX_POOL_SIZE`<br>`hono.commandRouter.cache.redis.max-pool-size` | no | `6` | The maximum number of connections held in the connection pool. |
+| `HONO_COMMANDROUTER_CACHE_REDIS_MAX_POOL_WAITING`<br>`hono.commandRouter.cache.redis.max-pool-waiting` | no | `512` | The maximum number of connection acquisitions that may be queued while the pool is exhausted. The vert.x Redis client acquires a pooled connection per command, so a burst of commands to route can easily exceed `max-pool-size` concurrent commands. Acquisitions beyond this limit are rejected, failing command delivery, so a deep wait queue is used to absorb such bursts. This component raises the value from the Quarkus default of `24` to `512`. |
+| `HONO_COMMANDROUTER_CACHE_REDIS_TIMEOUT`<br>`hono.commandRouter.cache.redis.timeout` | no | `10s` | The maximum time to wait for a command to complete, using the [Quarkus duration format](https://quarkus.io/guides/config-reference#duration-note-anchor) (e.g. `10s`). |
+
+See the [Quarkus Redis client reference](https://quarkus.io/guides/redis-reference) for the full set of supported
+properties. Any property documented there under the `quarkus.redis` prefix can be set using the
+`hono.commandRouter.cache.redis` prefix instead.
+
+{{% notice info %}}
+The Redis based variant implements its atomic cache operations as server-side Lua scripts and therefore requires the
+`EVAL` command (Redis 2.6 or later) to be permitted for the configured user. When using Redis ACLs, the `@scripting`
+command category must not be denied. The component verifies this at startup and fails to start with a descriptive
+error if scripting is not permitted.
+{{% /notice %}}
 
 ## Authentication Service Connection Configuration
 
