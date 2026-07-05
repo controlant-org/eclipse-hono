@@ -989,8 +989,8 @@
                       We can thus detect OOM problems when running locally as opposed to only
                       later on CI infrastructure.
                      -->
-                    <memorySwap>419430400</memorySwap>
-                    <memory>419430400</memory>
+                    <memorySwap>314572800</memorySwap>
+                    <memory>314572800</memory>
                     <env>
                       <LOG_LEVEL>info</LOG_LEVEL>
                       <MEMORY_MAX_TRACES>2000</MEMORY_MAX_TRACES>
@@ -1247,7 +1247,7 @@
                   <run>
                     <skip>${hono.kafka-messaging.disabled}</skip>
                     <ports>
-                      <port>+docker.host.address:kafka.port:9094</port>
+                      <port>kafka.port:9094</port>
                     </ports>
                     <portPropertyFile>${project.build.directory}/docker/kafka.port.properties</portPropertyFile>
                     <network>
