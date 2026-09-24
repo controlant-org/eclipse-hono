@@ -280,6 +280,10 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
 
         final T config = getConfig();
         if (config.isClusterEnabled()) {
+            if ("0.0.0.0".equals(config.getClusterBindAddress())) {
+                log.warn("Cluster mode is enabled but clusterBindAddress is '0.0.0.0'."
+                        + " In multi-node deployments, clusterBindAddress should be set to the reachable pod IP or hostname");
+            }
             if (clusterNodeRegistry == null) {
                 return Future.failedFuture(
                         new IllegalStateException("clusterNodeRegistry property must be set when cluster mode is enabled"));
@@ -291,7 +295,14 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
             return clusterNodeRegistry.registerNode(config.getCidNodeId(), getClusterAddress(), config.getClusterNodeTtl())
                     .onSuccess(ok -> {
                         heartbeatTimerId = vertx.setPeriodic(config.getClusterHeartbeat().toMillis(), id -> {
-                            clusterNodeRegistry.heartbeat(config.getCidNodeId(), config.getClusterNodeTtl());
+                            clusterNodeRegistry.heartbeat(config.getCidNodeId(), config.getClusterNodeTtl())
+                                    .onFailure(t -> {
+                                        log.warn("Failed to renew cluster node heartbeat [nodeId: {}], attempting re-registration",
+                                                config.getCidNodeId(), t);
+                                        clusterNodeRegistry.registerNode(config.getCidNodeId(), getClusterAddress(), config.getClusterNodeTtl())
+                                                .onFailure(regError -> log.error("Failed to re-register cluster node [nodeId: {}]",
+                                                        config.getCidNodeId(), regError));
+                                    });
                         });
                         if (clusterNodesProvider != null) {
                             clusterNodesProvider.refresh();

@@ -84,8 +84,10 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
                 endpointFactory.setClusterNodesProvider(provider);
                 final CacheBasedDtlsSessionStore sessionStore = new CacheBasedDtlsSessionStore(cache, metrics);
                 endpointFactory.setSessionStore(sessionStore);
+            } else if (protocolAdapterProperties.isClusterEnabled()) {
+                LOG.warn("Cluster mode is enabled, but no Cache bean is available");
             } else {
-                LOG.warn("Cluster mode or session resumption is enabled, but no Cache bean is available");
+                LOG.info("Session resumption is enabled, but no Cache bean is available. Resumption with central store is disabled");
             }
         }
 

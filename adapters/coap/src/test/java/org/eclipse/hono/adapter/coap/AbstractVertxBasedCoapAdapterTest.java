@@ -351,6 +351,61 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     }
 
     /**
+     * Verifies that when a periodic heartbeat fails, the adapter attempts re-registration of the node.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testHeartbeatFailureTriggersReRegistration(final VertxTestContext ctx) {
+
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(42);
+        properties.setClusterBindAddress("10.0.0.1");
+        properties.setClusterPort(5685);
+        properties.setClusterHeartbeat(Duration.ofMillis(50));
+        properties.setClusterNodeTtl(Duration.ofSeconds(30));
+
+        givenAnAdapter(properties);
+
+        final CoapClusterNodeRegistry registry = mock(CoapClusterNodeRegistry.class);
+        when(registry.registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class)))
+                .thenReturn(Future.succeededFuture());
+        when(registry.heartbeat(anyInt(), any(Duration.class)))
+                .thenReturn(Future.failedFuture(new IllegalStateException("lease expired")));
+        when(registry.unregisterNode(anyInt()))
+                .thenReturn(Future.succeededFuture());
+
+        adapter.setClusterNodeRegistry(registry);
+
+        final Promise<Void> startPromise = Promise.promise();
+        adapter.start(startPromise);
+
+        startPromise.future()
+                .compose(v -> {
+                    verify(registry).registerNode(eq(42), eq(new InetSocketAddress("10.0.0.1", 5685)), eq(Duration.ofSeconds(30)));
+
+                    final Promise<Void> reRegPromise = Promise.promise();
+                    vertx.setTimer(120, timerId -> {
+                        ctx.verify(() -> {
+                            verify(registry, atLeastOnce()).heartbeat(eq(42), eq(Duration.ofSeconds(30)));
+                            verify(registry, atLeast(2)).registerNode(
+                                    eq(42),
+                                    eq(new InetSocketAddress("10.0.0.1", 5685)),
+                                    eq(Duration.ofSeconds(30)));
+                        });
+                        reRegPromise.complete();
+                    });
+                    return reRegPromise.future();
+                })
+                .compose(v -> {
+                    final Promise<Void> stopPromise = Promise.promise();
+                    adapter.stop(stopPromise);
+                    return stopPromise.future();
+                })
+                .onComplete(ctx.succeedingThenComplete());
+    }
+
+    /**
      * Verifies that startup fails when cluster mode is enabled but no cluster node registry is set.
      *
      * @param ctx The helper to use for running async tests on vertx.
