@@ -171,7 +171,7 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
         setClusterEnabled(options.clusterEnabled());
         setClusterPort(options.clusterPort());
         setClusterBindAddress(options.clusterBindAddress());
-        this.clusterMacSecret = options.clusterMacSecret().orElse(null);
+        setClusterMacSecret(options.clusterMacSecret().orElse(null));
         setClusterHeartbeat(options.clusterHeartbeat());
         setClusterNodeTtl(options.clusterNodeTtl());
         setSessionResumptionEnabled(options.sessionResumptionEnabled());
@@ -562,14 +562,14 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
      * Sets the length in bytes of the Connection ID.
      * <p>
      * The default value of this property is {@value #DEFAULT_CID_LENGTH}.
-     * Must be at least 1, and at least 5 when clustering is enabled.
+     * Must be between 1 and 255, and at least 5 when clustering is enabled.
      *
      * @param cidLength The CID length in bytes.
-     * @throws IllegalArgumentException if cidLength &lt; 1, or &lt; 5 when clustering is enabled.
+     * @throws IllegalArgumentException if cidLength &lt; 1, &gt; 255, or &lt; 5 when clustering is enabled.
      */
     public final void setCidLength(final int cidLength) {
-        if (cidLength < 1) {
-            throw new IllegalArgumentException("CID length must be at least 1");
+        if (cidLength < 1 || cidLength > 255) {
+            throw new IllegalArgumentException("CID length must be between 1 and 255");
         }
         if (this.clusterEnabled && cidLength < 5) {
             throw new IllegalArgumentException("CID length must be at least 5 when clustering is enabled");
@@ -594,8 +594,12 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
      * The default value of this property is {@value #DEFAULT_CID_NODE_ID}.
      *
      * @param cidNodeId The node ID (0-255), or {@link Constants#PORT_UNCONFIGURED} for unconfigured.
+     * @throws IllegalArgumentException if cidNodeId is not between 0 and 255 and not {@link Constants#PORT_UNCONFIGURED}.
      */
     public final void setCidNodeId(final int cidNodeId) {
+        if (cidNodeId != Constants.PORT_UNCONFIGURED && (cidNodeId < 0 || cidNodeId > 255)) {
+            throw new IllegalArgumentException("CID node ID must be between 0 and 255, or " + Constants.PORT_UNCONFIGURED);
+        }
         this.cidNodeId = cidNodeId;
     }
 

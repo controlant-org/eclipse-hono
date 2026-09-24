@@ -100,9 +100,10 @@ public class CoapAdapterPropertiesTest {
     void testValidation() {
         final CoapAdapterProperties props = new CoapAdapterProperties();
 
-        // CID length >= 1
+        // CID length >= 1 and <= 255
         assertThrows(IllegalArgumentException.class, () -> props.setCidLength(0));
         assertThrows(IllegalArgumentException.class, () -> props.setCidLength(-1));
+        assertThrows(IllegalArgumentException.class, () -> props.setCidLength(256));
 
         // CID length >= 5 if clusterEnabled
         props.setClusterEnabled(true);
@@ -114,6 +115,16 @@ public class CoapAdapterPropertiesTest {
         props.setClusterEnabled(false);
         props.setCidLength(4);
         assertThrows(IllegalArgumentException.class, () -> props.setClusterEnabled(true));
+
+        // CID node ID (0-255 or -1)
+        assertThrows(IllegalArgumentException.class, () -> props.setCidNodeId(-2));
+        assertThrows(IllegalArgumentException.class, () -> props.setCidNodeId(256));
+        props.setCidNodeId(Constants.PORT_UNCONFIGURED);
+        assertEquals(Constants.PORT_UNCONFIGURED, props.getCidNodeId());
+        props.setCidNodeId(0);
+        assertEquals(0, props.getCidNodeId());
+        props.setCidNodeId(255);
+        assertEquals(255, props.getCidNodeId());
 
         // Cluster port > 0 and <= 65535
         assertThrows(IllegalArgumentException.class, () -> props.setClusterPort(0));

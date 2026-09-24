@@ -50,19 +50,19 @@ public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAd
                 .register(registry);
         this.clusterForwardedOutboundCounter = Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARDED)
                 .description("Number of datagrams forwarded to another cluster node")
-                .tag("direction", "outbound")
+                .tag(TAG_DIRECTION, TAG_VALUE_OUTBOUND)
                 .register(registry);
         this.clusterForwardedInboundCounter = Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARDED)
                 .description("Number of datagrams received from another cluster node")
-                .tag("direction", "inbound")
+                .tag(TAG_DIRECTION, TAG_VALUE_INBOUND)
                 .register(registry);
         this.resumptionSuccessCounter = Counter.builder(METER_COAP_DTLS_RESUMPTION)
                 .description("Number of successful DTLS session resumptions")
-                .tag("outcome", "succeeded")
+                .tag(TAG_OUTCOME, TAG_VALUE_SUCCEEDED)
                 .register(registry);
         this.resumptionFailureCounter = Counter.builder(METER_COAP_DTLS_RESUMPTION)
                 .description("Number of failed DTLS session resumptions")
-                .tag("outcome", "failed")
+                .tag(TAG_OUTCOME, TAG_VALUE_FAILED)
                 .register(registry);
     }
 
@@ -85,7 +85,7 @@ public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAd
     public void incrementClusterForwardDropped(final String reason) {
         Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED)
                 .description("Number of cluster forward datagrams dropped")
-                .tag("reason", reason != null ? reason : "unknown")
+                .tag(TAG_REASON, reason != null ? reason : DROP_REASON_UNKNOWN)
                 .register(this.registry)
                 .increment();
     }

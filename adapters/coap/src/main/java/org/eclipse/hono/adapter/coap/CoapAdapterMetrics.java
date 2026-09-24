@@ -42,6 +42,61 @@ public interface CoapAdapterMetrics extends Metrics {
     String METER_COAP_DTLS_RESUMPTION = "hono.coap.dtls.resumption";
 
     /**
+     * The tag name for cluster forwarding direction.
+     */
+    String TAG_DIRECTION = "direction";
+
+    /**
+     * The tag value for outbound cluster forwarding.
+     */
+    String TAG_VALUE_OUTBOUND = "outbound";
+
+    /**
+     * The tag value for inbound cluster forwarding.
+     */
+    String TAG_VALUE_INBOUND = "inbound";
+
+    /**
+     * The tag name for resumption outcome.
+     */
+    String TAG_OUTCOME = "outcome";
+
+    /**
+     * The tag value for a successful resumption outcome.
+     */
+    String TAG_VALUE_SUCCEEDED = "succeeded";
+
+    /**
+     * The tag value for a failed resumption outcome.
+     */
+    String TAG_VALUE_FAILED = "failed";
+
+    /**
+     * The tag name for cluster forward drop reason.
+     */
+    String TAG_REASON = "reason";
+
+    /**
+     * Drop reason when the target node is offline or unreachable.
+     */
+    String DROP_REASON_NODE_OFFLINE = "node_offline";
+
+    /**
+     * Drop reason when the message MAC is invalid.
+     */
+    String DROP_REASON_MAC_INVALID = "mac_invalid";
+
+    /**
+     * Drop reason when the cluster forward message is malformed.
+     */
+    String DROP_REASON_MALFORMED = "malformed";
+
+    /**
+     * Drop reason when the drop reason is unknown.
+     */
+    String DROP_REASON_UNKNOWN = "unknown";
+
+    /**
      * A no-op implementation for this specific metrics type.
      */
     final class Noop extends NoopBasedMetrics implements CoapAdapterMetrics {

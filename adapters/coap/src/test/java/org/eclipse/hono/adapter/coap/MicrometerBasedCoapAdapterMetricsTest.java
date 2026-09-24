@@ -51,29 +51,36 @@ public class MicrometerBasedCoapAdapterMetricsTest {
     void testClusterForwardedMetrics() {
         metrics.incrementClusterForwardedOutbound();
         assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARDED)
-                .tag("direction", "outbound").counter().count());
+                .tag(CoapAdapterMetrics.TAG_DIRECTION, CoapAdapterMetrics.TAG_VALUE_OUTBOUND).counter().count());
 
         metrics.incrementClusterForwardedInbound();
         assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARDED)
-                .tag("direction", "inbound").counter().count());
+                .tag(CoapAdapterMetrics.TAG_DIRECTION, CoapAdapterMetrics.TAG_VALUE_INBOUND).counter().count());
     }
 
     @Test
     void testClusterForwardDroppedMetric() {
-        metrics.incrementClusterForwardDropped("node_unknown");
+        metrics.incrementClusterForwardDropped(CoapAdapterMetrics.DROP_REASON_NODE_OFFLINE);
         assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED)
-                .tag("reason", "node_unknown").counter().count());
+                .tag(CoapAdapterMetrics.TAG_REASON, CoapAdapterMetrics.DROP_REASON_NODE_OFFLINE).counter().count());
+    }
+
+    @Test
+    void testClusterForwardDroppedNullReasonFallback() {
+        metrics.incrementClusterForwardDropped(null);
+        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED)
+                .tag(CoapAdapterMetrics.TAG_REASON, CoapAdapterMetrics.DROP_REASON_UNKNOWN).counter().count());
     }
 
     @Test
     void testResumptionMetrics() {
         metrics.incrementResumption(true);
         assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_RESUMPTION)
-                .tag("outcome", "succeeded").counter().count());
+                .tag(CoapAdapterMetrics.TAG_OUTCOME, CoapAdapterMetrics.TAG_VALUE_SUCCEEDED).counter().count());
 
         metrics.incrementResumption(false);
         assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_RESUMPTION)
-                .tag("outcome", "failed").counter().count());
+                .tag(CoapAdapterMetrics.TAG_OUTCOME, CoapAdapterMetrics.TAG_VALUE_FAILED).counter().count());
     }
 
     @Test
@@ -82,7 +89,7 @@ public class MicrometerBasedCoapAdapterMetricsTest {
         CoapAdapterMetrics.NOOP.incrementCidReceived();
         CoapAdapterMetrics.NOOP.incrementClusterForwardedOutbound();
         CoapAdapterMetrics.NOOP.incrementClusterForwardedInbound();
-        CoapAdapterMetrics.NOOP.incrementClusterForwardDropped("reason");
+        CoapAdapterMetrics.NOOP.incrementClusterForwardDropped(CoapAdapterMetrics.DROP_REASON_NODE_OFFLINE);
         CoapAdapterMetrics.NOOP.incrementResumption(true);
     }
 }
