@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018, 2021 Contributors to the Eclipse Foundation
+ * Copyright (c) 2018, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -22,6 +22,26 @@ import org.eclipse.hono.service.metric.NoopBasedMetrics;
 public interface CoapAdapterMetrics extends Metrics {
 
     /**
+     * The name of the meter for received DTLS packets containing a Connection ID (CID).
+     */
+    String METER_COAP_DTLS_CID_RECEIVED = "hono.coap.dtls.cid.received";
+
+    /**
+     * The name of the meter for datagrams forwarded between cluster nodes.
+     */
+    String METER_COAP_DTLS_CLUSTER_FORWARDED = "hono.coap.dtls.cluster.forwarded";
+
+    /**
+     * The name of the meter for cluster forward datagrams dropped.
+     */
+    String METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED = "hono.coap.dtls.cluster.forward.dropped";
+
+    /**
+     * The name of the meter for DTLS session resumptions.
+     */
+    String METER_COAP_DTLS_RESUMPTION = "hono.coap.dtls.resumption";
+
+    /**
      * A no-op implementation for this specific metrics type.
      */
     final class Noop extends NoopBasedMetrics implements CoapAdapterMetrics {
@@ -35,5 +55,37 @@ public interface CoapAdapterMetrics extends Metrics {
      */
     CoapAdapterMetrics NOOP = new Noop();
 
-    // nothing for now
+    /**
+     * Increments the counter for received datagrams with DTLS Connection ID (CID).
+     */
+    default void incrementCidReceived() {
+    }
+
+    /**
+     * Increments the counter for outbound datagrams forwarded to another cluster node.
+     */
+    default void incrementClusterForwardedOutbound() {
+    }
+
+    /**
+     * Increments the counter for inbound datagrams forwarded from another cluster node.
+     */
+    default void incrementClusterForwardedInbound() {
+    }
+
+    /**
+     * Increments the counter for datagrams dropped during cluster forwarding.
+     *
+     * @param reason The reason why the datagram was dropped.
+     */
+    default void incrementClusterForwardDropped(final String reason) {
+    }
+
+    /**
+     * Increments the counter for DTLS session resumption attempts.
+     *
+     * @param success {@code true} if the resumption succeeded, {@code false} otherwise.
+     */
+    default void incrementResumption(final boolean success) {
+    }
 }
