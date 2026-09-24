@@ -63,7 +63,7 @@ public class CacheBasedClusterNodesProviderTest {
     }
 
     /**
-     * Verifies that registering a node allows retrieval via getClusterNode and available.
+     * Verifies that registering a node allows retrieval via getClusterNode and available after refresh.
      */
     @Test
     void testRegisterNodeAndLookup() {
@@ -71,6 +71,7 @@ public class CacheBasedClusterNodesProviderTest {
         registry.registerNode(0, address, Duration.ofSeconds(30))
                 .toCompletionStage().toCompletableFuture().join();
 
+        provider.refresh().toCompletionStage().toCompletableFuture().join();
         assertEquals(address, provider.getClusterNode(0));
         assertTrue(provider.available(address));
         assertFalse(provider.available(new InetSocketAddress("10.0.0.2", 5685)));
@@ -179,22 +180,29 @@ public class CacheBasedClusterNodesProviderTest {
     }
 
     /**
-     * Verifies read-through behavior when node is not yet present in provider's local cache.
+     * Verifies that unrefreshed or unknown nodes return null non-blockingly.
      */
     @Test
-    void testReadThroughLookup() {
+    void testUnrefreshedOrUnknownNodeReturnsNull() {
         final InetSocketAddress address = new InetSocketAddress("10.0.0.3", 5685);
         registry.registerNode(3, address, Duration.ofSeconds(30))
                 .toCompletionStage().toCompletableFuture().join();
 
-        // Do not call provider.refresh() - getClusterNode should read through to registry
-        final InetSocketAddress found = provider.getClusterNode(3);
-        assertEquals(address, found);
+        // Before provider.refresh(), getClusterNode(3) must return null non-blockingly
+        assertNull(provider.getClusterNode(3));
+        assertFalse(provider.available(address));
+
+        // Unknown node also returns null immediately
+        assertNull(provider.getClusterNode(99));
+
+        // Once refresh() is called, node 3 becomes available
+        provider.refresh().toCompletionStage().toCompletableFuture().join();
+        assertEquals(address, provider.getClusterNode(3));
         assertTrue(provider.available(address));
     }
 
     /**
-     * Verifies validation of arguments.
+     * Verifies validation of arguments including node ID range (0..255).
      */
     @Test
     void testArgumentValidation() {
@@ -208,6 +216,20 @@ public class CacheBasedClusterNodesProviderTest {
 
         assertThrows(NullPointerException.class, () -> registry.heartbeat(0, null));
         assertThrows(IllegalArgumentException.class, () -> registry.heartbeat(0, Duration.ZERO));
+
+        // Node ID range validation: negative
+        assertThrows(IllegalArgumentException.class, () -> registry.registerNode(-1, addr, Duration.ofSeconds(10)));
+        assertThrows(IllegalArgumentException.class, () -> registry.heartbeat(-1, Duration.ofSeconds(10)));
+        assertThrows(IllegalArgumentException.class, () -> registry.unregisterNode(-1));
+        assertThrows(IllegalArgumentException.class, () -> registry.getNodeAddress(-1));
+        assertThrows(IllegalArgumentException.class, () -> CacheBasedCoapClusterNodeRegistry.toKey(-1));
+
+        // Node ID range validation: > 255
+        assertThrows(IllegalArgumentException.class, () -> registry.registerNode(256, addr, Duration.ofSeconds(10)));
+        assertThrows(IllegalArgumentException.class, () -> registry.heartbeat(256, Duration.ofSeconds(10)));
+        assertThrows(IllegalArgumentException.class, () -> registry.unregisterNode(256));
+        assertThrows(IllegalArgumentException.class, () -> registry.getNodeAddress(256));
+        assertThrows(IllegalArgumentException.class, () -> CacheBasedCoapClusterNodeRegistry.toKey(256));
     }
 
     /**

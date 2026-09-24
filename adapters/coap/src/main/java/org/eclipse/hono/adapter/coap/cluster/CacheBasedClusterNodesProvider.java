@@ -14,13 +14,11 @@
 package org.eclipse.hono.adapter.coap.cluster;
 
 import java.net.InetSocketAddress;
-import java.time.Duration;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.californium.scandium.DtlsClusterConnector.ClusterNodesProvider;
 import org.slf4j.Logger;
@@ -31,61 +29,29 @@ import io.vertx.core.Future;
 /**
  * An implementation of Californium's {@link ClusterNodesProvider} backed by a {@link CoapClusterNodeRegistry}.
  * <p>
- * Maintains an in-memory cache of active cluster node addresses, updated via periodic {@link #refresh()} calls
- * and optional synchronous read-through lookups on cache misses.
+ * Maintains an in-memory cache of active cluster node addresses, updated via {@link #refresh()} calls.
+ * All lookup operations are non-blocking and strictly in-memory.
  */
 public class CacheBasedClusterNodesProvider implements ClusterNodesProvider {
-
-    /**
-     * Default timeout for synchronous read-through lookups.
-     */
-    public static final Duration DEFAULT_READ_THROUGH_TIMEOUT = Duration.ofSeconds(2);
 
     private static final Logger LOG = LoggerFactory.getLogger(CacheBasedClusterNodesProvider.class);
 
     private final CoapClusterNodeRegistry registry;
     private final ConcurrentMap<Integer, InetSocketAddress> nodes = new ConcurrentHashMap<>();
-    private final Duration readThroughTimeout;
 
     /**
-     * Creates a new provider backed by the given registry using default read-through timeout.
+     * Creates a new provider backed by the given registry.
      *
      * @param registry The cluster node registry.
      * @throws NullPointerException if registry is {@code null}.
      */
     public CacheBasedClusterNodesProvider(final CoapClusterNodeRegistry registry) {
-        this(registry, DEFAULT_READ_THROUGH_TIMEOUT);
-    }
-
-    /**
-     * Creates a new provider backed by the given registry with a specific read-through timeout.
-     *
-     * @param registry The cluster node registry.
-     * @param readThroughTimeout The timeout duration for synchronous read-through lookups.
-     * @throws NullPointerException if any parameter is {@code null}.
-     */
-    public CacheBasedClusterNodesProvider(final CoapClusterNodeRegistry registry, final Duration readThroughTimeout) {
         this.registry = Objects.requireNonNull(registry, "registry must not be null");
-        this.readThroughTimeout = Objects.requireNonNull(readThroughTimeout, "readThroughTimeout must not be null");
     }
 
     @Override
     public InetSocketAddress getClusterNode(final int nodeId) {
-        InetSocketAddress address = nodes.get(nodeId);
-        if (address == null) {
-            try {
-                address = registry.getNodeAddress(nodeId)
-                        .toCompletionStage()
-                        .toCompletableFuture()
-                        .get(readThroughTimeout.toMillis(), TimeUnit.MILLISECONDS);
-                if (address != null) {
-                    nodes.put(nodeId, address);
-                }
-            } catch (final Exception e) {
-                LOG.debug("Could not read through address for cluster node {}", nodeId, e);
-            }
-        }
-        return address;
+        return nodes.get(nodeId);
     }
 
     @Override

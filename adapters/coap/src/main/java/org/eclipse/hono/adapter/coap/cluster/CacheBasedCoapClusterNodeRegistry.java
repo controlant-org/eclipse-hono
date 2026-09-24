@@ -21,7 +21,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.hono.deviceconnection.common.Cache;
@@ -55,7 +54,6 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     private final Cache<String, String> cache;
     private final Clock clock;
-    private final Set<Integer> knownNodeIds = ConcurrentHashMap.newKeySet();
 
     /**
      * Creates a new registry backed by the given cache using the UTC system clock.
@@ -81,6 +79,7 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     @Override
     public Future<Void> registerNode(final int nodeId, final InetSocketAddress internalAddress, final Duration ttl) {
+        checkNodeId(nodeId);
         Objects.requireNonNull(internalAddress, "internalAddress must not be null");
         Objects.requireNonNull(ttl, "ttl must not be null");
         if (ttl.isNegative() || ttl.isZero()) {
@@ -89,7 +88,6 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
         final String key = toKey(nodeId);
         final String value = toJson(internalAddress, clock.millis());
-        knownNodeIds.add(nodeId);
 
         return cache.put(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS)
                 .onSuccess(v -> LOG.debug("Registered cluster node [nodeId: {}, address: {}, ttl: {}ms]",
@@ -100,6 +98,7 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     @Override
     public Future<Void> heartbeat(final int nodeId, final Duration ttl) {
+        checkNodeId(nodeId);
         Objects.requireNonNull(ttl, "ttl must not be null");
         if (ttl.isNegative() || ttl.isZero()) {
             throw new IllegalArgumentException("ttl must be positive");
@@ -125,8 +124,8 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     @Override
     public Future<Void> unregisterNode(final int nodeId) {
+        checkNodeId(nodeId);
         final String key = toKey(nodeId);
-        knownNodeIds.remove(nodeId);
         return cache.get(key)
                 .compose(existingJson -> {
                     if (existingJson != null) {
@@ -146,6 +145,7 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     @Override
     public Future<InetSocketAddress> getNodeAddress(final int nodeId) {
+        checkNodeId(nodeId);
         final String key = toKey(nodeId);
         return cache.get(key)
                 .map(json -> {
@@ -158,12 +158,9 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     @Override
     public Future<Map<Integer, InetSocketAddress>> getAllNodes() {
-        final Set<String> keys = new HashSet<>(MAX_NODE_ID - MIN_NODE_ID + 1 + knownNodeIds.size());
+        final Set<String> keys = new HashSet<>(MAX_NODE_ID - MIN_NODE_ID + 1);
         for (int i = MIN_NODE_ID; i <= MAX_NODE_ID; i++) {
             keys.add(toKey(i));
-        }
-        for (final Integer id : knownNodeIds) {
-            keys.add(toKey(id));
         }
 
         return cache.getAll(keys)
@@ -193,8 +190,10 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
      *
      * @param nodeId The node ID.
      * @return The cache key.
+     * @throws IllegalArgumentException if nodeId is out of range [0..255].
      */
     public static String toKey(final int nodeId) {
+        checkNodeId(nodeId);
         return KEY_PREFIX + nodeId;
     }
 
@@ -206,6 +205,13 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
      */
     public static int getNodeIdFromKey(final String key) {
         return Integer.parseInt(key.substring(KEY_PREFIX.length()));
+    }
+
+    private static void checkNodeId(final int nodeId) {
+        if (nodeId < MIN_NODE_ID || nodeId > MAX_NODE_ID) {
+            throw new IllegalArgumentException(
+                    String.format("nodeId %d out of bounds [%d..%d]", nodeId, MIN_NODE_ID, MAX_NODE_ID));
+        }
     }
 
     private static String toJson(final InetSocketAddress address, final long timestamp) {
