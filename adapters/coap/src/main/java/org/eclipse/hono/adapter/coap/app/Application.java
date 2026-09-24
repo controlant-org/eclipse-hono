@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021 Contributors to the Eclipse Foundation
+ * Copyright (c) 2021, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -22,13 +22,20 @@ import org.eclipse.hono.adapter.coap.DeviceRegistryBasedCertificateVerifier;
 import org.eclipse.hono.adapter.coap.DeviceRegistryBasedPskStore;
 import org.eclipse.hono.adapter.coap.EventResource;
 import org.eclipse.hono.adapter.coap.TelemetryResource;
+import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
+import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
 import org.eclipse.hono.adapter.coap.impl.ConfigBasedCoapEndpointFactory;
 import org.eclipse.hono.adapter.coap.impl.VertxBasedCoapAdapter;
+import org.eclipse.hono.adapter.coap.session.CacheBasedDtlsSessionStore;
+import org.eclipse.hono.deviceconnection.common.Cache;
 import org.eclipse.hono.util.CommandConstants;
 import org.eclipse.hono.util.EventConstants;
 import org.eclipse.hono.util.TelemetryConstants;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
 /**
@@ -37,8 +44,13 @@ import jakarta.inject.Inject;
 @ApplicationScoped
 public class Application extends AbstractProtocolAdapterApplication<CoapAdapterProperties> {
 
+    private static final Logger LOG = LoggerFactory.getLogger(Application.class);
+
     @Inject
     CoapAdapterMetrics metrics;
+
+    @Inject
+    Instance<Cache<String, String>> cacheInstance;
 
     /**
      * {@inheritDoc}
@@ -61,6 +73,21 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
         final var endpointFactory = new ConfigBasedCoapEndpointFactory(vertx, protocolAdapterProperties);
         endpointFactory.setPskStore(new DeviceRegistryBasedPskStore(adapter, tracer));
         endpointFactory.setCertificateVerifier(new DeviceRegistryBasedCertificateVerifier(vertx, adapter, tracer));
+
+        if (protocolAdapterProperties.isClusterEnabled() || protocolAdapterProperties.isSessionResumptionEnabled()) {
+            if (cacheInstance != null && cacheInstance.isResolvable()) {
+                final Cache<String, String> cache = cacheInstance.get();
+                final CacheBasedCoapClusterNodeRegistry registry = new CacheBasedCoapClusterNodeRegistry(cache);
+                adapter.setClusterNodeRegistry(registry);
+                final CacheBasedClusterNodesProvider provider = new CacheBasedClusterNodesProvider(registry);
+                adapter.setClusterNodesProvider(provider);
+                endpointFactory.setClusterNodesProvider(provider);
+                final CacheBasedDtlsSessionStore sessionStore = new CacheBasedDtlsSessionStore(cache, metrics);
+                endpointFactory.setSessionStore(sessionStore);
+            } else {
+                LOG.warn("Cluster mode or session resumption is enabled, but no Cache bean is available");
+            }
+        }
 
         adapter.setCoapEndpointFactory(endpointFactory);
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ * Copyright (c) 2018, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -12,6 +12,7 @@
  */
 package org.eclipse.hono.adapter.coap;
 
+import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,6 +23,8 @@ import org.eclipse.californium.core.coap.CoAP;
 import org.eclipse.californium.core.network.Endpoint;
 import org.eclipse.californium.core.server.resources.Resource;
 import org.eclipse.hono.adapter.AbstractProtocolAdapterBase;
+import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
+import org.eclipse.hono.adapter.coap.cluster.CoapClusterNodeRegistry;
 import org.eclipse.hono.util.Constants;
 
 import io.vertx.core.Future;
@@ -52,6 +55,10 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     private CoapEndpointFactory endpointFactory;
     private CoapServer server;
     private CoapAdapterMetrics metrics = CoapAdapterMetrics.NOOP;
+    private CoapClusterNodeRegistry clusterNodeRegistry;
+    private CacheBasedClusterNodesProvider clusterNodesProvider;
+    private Long heartbeatTimerId;
+    private Long clusterRefreshTimerId;
 
     /**
      * Sets the factory for creating CoAP endpoints.
@@ -80,6 +87,41 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     @Override
     public final CoapAdapterMetrics getMetrics() {
         return metrics;
+    }
+
+    /**
+     * Sets the registry for tracking active CoAP cluster nodes.
+     *
+     * @param clusterNodeRegistry The registry.
+     */
+    public void setClusterNodeRegistry(final CoapClusterNodeRegistry clusterNodeRegistry) {
+        this.clusterNodeRegistry = clusterNodeRegistry;
+    }
+
+    /**
+     * Sets the provider for Californium DTLS cluster node discovery.
+     *
+     * @param clusterNodesProvider The provider.
+     */
+    public void setClusterNodesProvider(final CacheBasedClusterNodesProvider clusterNodesProvider) {
+        this.clusterNodesProvider = clusterNodesProvider;
+    }
+
+    Long getHeartbeatTimerId() {
+        return heartbeatTimerId;
+    }
+
+    Long getClusterRefreshTimerId() {
+        return clusterRefreshTimerId;
+    }
+
+    /**
+     * Gets the socket address used for cluster internal communication.
+     *
+     * @return The socket address.
+     */
+    protected InetSocketAddress getClusterAddress() {
+        return new InetSocketAddress(getConfig().getClusterBindAddress(), getConfig().getClusterPort());
     }
 
     /**
@@ -228,12 +270,37 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     /**
      * Invoked before the CoAP server is started.
      * <p>
-     * May be overridden by sub-classes to provide additional startup handling.
+     * Registers this node with the cluster registry and starts periodic heartbeats and node refreshes
+     * if clustering is enabled. May be overridden by sub-classes to provide additional startup handling.
      *
      * @return A future indicating the outcome of the operation. The start up process fails if the returned future
      *         fails.
      */
     protected Future<Void> preStartup() {
+
+        final T config = getConfig();
+        if (config.isClusterEnabled()) {
+            if (clusterNodeRegistry == null) {
+                return Future.failedFuture(
+                        new IllegalStateException("clusterNodeRegistry property must be set when cluster mode is enabled"));
+            }
+            if (config.getCidNodeId() < 0) {
+                return Future.failedFuture(
+                        new IllegalStateException("cidNodeId must be configured when cluster mode is enabled"));
+            }
+            return clusterNodeRegistry.registerNode(config.getCidNodeId(), getClusterAddress(), config.getClusterNodeTtl())
+                    .onSuccess(ok -> {
+                        heartbeatTimerId = vertx.setPeriodic(config.getClusterHeartbeat().toMillis(), id -> {
+                            clusterNodeRegistry.heartbeat(config.getCidNodeId(), config.getClusterNodeTtl());
+                        });
+                        if (clusterNodesProvider != null) {
+                            clusterNodesProvider.refresh();
+                            clusterRefreshTimerId = vertx.setPeriodic(config.getClusterHeartbeat().toMillis(), id -> {
+                                clusterNodesProvider.refresh();
+                            });
+                        }
+                    });
+        }
 
         return Future.succeededFuture();
     }
@@ -250,27 +317,43 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     @Override
     public final void doStop(final Promise<Void> stopPromise) {
 
-        try {
-            preShutdown();
-        } catch (final Exception e) {
-            log.error("error in preShutdown", e);
-        }
-
-        vertx.executeBlocking(() -> {
-            if (server != null) {
-                server.stop();
-            }
-            return (Void) null;
-        })
-        .compose(ok -> postShutdown())
-        .onComplete(stopPromise);
+        preShutdown()
+                .compose(v -> vertx.executeBlocking(() -> {
+                    if (server != null) {
+                        server.stop();
+                    }
+                    return (Void) null;
+                }))
+                .compose(ok -> postShutdown())
+                .onComplete(stopPromise);
     }
 
     /**
      * Invoked before the CoAP server is shut down. May be overridden by sub-classes.
+     *
+     * @return A future that has to be completed when this operation is finished.
      */
-    protected void preShutdown() {
-        // empty
+    protected Future<Void> preShutdown() {
+
+        final T config = getConfig();
+        if (config != null && config.isClusterEnabled()) {
+            if (heartbeatTimerId != null) {
+                vertx.cancelTimer(heartbeatTimerId);
+                heartbeatTimerId = null;
+            }
+            if (clusterRefreshTimerId != null) {
+                vertx.cancelTimer(clusterRefreshTimerId);
+                clusterRefreshTimerId = null;
+            }
+            if (clusterNodeRegistry != null && config.getCidNodeId() >= 0) {
+                return clusterNodeRegistry.unregisterNode(config.getCidNodeId())
+                        .recover(t -> {
+                            log.warn("Failed to unregister cluster node during shutdown", t);
+                            return Future.succeededFuture();
+                        });
+            }
+        }
+        return Future.succeededFuture();
     }
 
     /**

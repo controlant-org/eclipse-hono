@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018, 2022 Contributors to the Eclipse Foundation
+ * Copyright (c) 2018, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -14,7 +14,10 @@
 package org.eclipse.hono.adapter.coap;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -24,6 +27,8 @@ import static org.mockito.Mockito.when;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -39,6 +44,8 @@ import org.eclipse.californium.core.network.Exchange.Origin;
 import org.eclipse.californium.core.server.resources.CoapExchange;
 import org.eclipse.californium.core.server.resources.Resource;
 import org.eclipse.californium.elements.config.Configuration;
+import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
+import org.eclipse.hono.adapter.coap.cluster.CoapClusterNodeRegistry;
 import org.eclipse.hono.adapter.resourcelimits.ResourceLimitChecks;
 import org.eclipse.hono.adapter.test.ProtocolAdapterTestSupport;
 import org.eclipse.hono.client.command.ProtocolAdapterCommandConsumer;
@@ -272,6 +279,156 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
             ctx.verify(() -> verify(startupHandler, never()).handle(any()));
             ctx.completeNow();
         }));
+    }
+
+    /**
+     * Verifies that when cluster mode is enabled, the adapter registers the node in the cluster
+     * registry and starts heartbeats during startup, and cancels timers and unregisters the node during shutdown.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterLifecycle(final VertxTestContext ctx) {
+
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(42);
+        properties.setClusterBindAddress("10.0.0.1");
+        properties.setClusterPort(5685);
+        properties.setClusterHeartbeat(Duration.ofMillis(50));
+        properties.setClusterNodeTtl(Duration.ofSeconds(30));
+
+        givenAnAdapter(properties);
+
+        final CoapClusterNodeRegistry registry = mock(CoapClusterNodeRegistry.class);
+        when(registry.registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class)))
+                .thenReturn(Future.succeededFuture());
+        when(registry.heartbeat(anyInt(), any(Duration.class)))
+                .thenReturn(Future.succeededFuture());
+        when(registry.unregisterNode(anyInt()))
+                .thenReturn(Future.succeededFuture());
+
+        final CacheBasedClusterNodesProvider provider = mock(CacheBasedClusterNodesProvider.class);
+        when(provider.refresh()).thenReturn(Future.succeededFuture());
+
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(provider);
+
+        final Promise<Void> startPromise = Promise.promise();
+        adapter.start(startPromise);
+
+        startPromise.future()
+                .compose(v -> {
+                    ctx.verify(() -> {
+                        verify(registry).registerNode(eq(42), eq(new InetSocketAddress("10.0.0.1", 5685)), eq(Duration.ofSeconds(30)));
+                        verify(provider).refresh();
+                        assertThat(adapter.getHeartbeatTimerId()).isNotNull();
+                        assertThat(adapter.getClusterRefreshTimerId()).isNotNull();
+                    });
+
+                    final Promise<Void> heartbeatPromise = Promise.promise();
+                    vertx.setTimer(120, timerId -> {
+                        ctx.verify(() -> {
+                            verify(registry, atLeastOnce()).heartbeat(eq(42), eq(Duration.ofSeconds(30)));
+                            verify(provider, atLeast(2)).refresh();
+                        });
+                        heartbeatPromise.complete();
+                    });
+                    return heartbeatPromise.future();
+                })
+                .compose(v -> {
+                    final Promise<Void> stopPromise = Promise.promise();
+                    adapter.stop(stopPromise);
+                    return stopPromise.future();
+                })
+                .onComplete(ctx.succeeding(v -> {
+                    ctx.verify(() -> {
+                        verify(registry).unregisterNode(eq(42));
+                        assertThat(adapter.getHeartbeatTimerId()).isNull();
+                        assertThat(adapter.getClusterRefreshTimerId()).isNull();
+                    });
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that startup fails when cluster mode is enabled but no cluster node registry is set.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterStartupFailsWhenRegistryNotSet(final VertxTestContext ctx) {
+
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(1);
+        givenAnAdapter(properties);
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future().onComplete(ctx.failing(t -> {
+            ctx.verify(() -> {
+                assertThat(t).isInstanceOf(IllegalStateException.class);
+                assertThat(t.getMessage()).contains("clusterNodeRegistry property must be set");
+            });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
+     * Verifies that startup fails when cluster mode is enabled and registry is set but cidNodeId is negative.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterStartupFailsWhenNodeIdNegative(final VertxTestContext ctx) {
+
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(-1);
+        givenAnAdapter(properties);
+        adapter.setClusterNodeRegistry(mock(CoapClusterNodeRegistry.class));
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future().onComplete(ctx.failing(t -> {
+            ctx.verify(() -> {
+                assertThat(t).isInstanceOf(IllegalStateException.class);
+                assertThat(t.getMessage()).contains("cidNodeId must be configured");
+            });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
+     * Verifies that adapter shutdown succeeds even if unregistering the cluster node fails.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterShutdownSucceedsWhenUnregisterFails(final VertxTestContext ctx) {
+
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(42);
+        givenAnAdapter(properties);
+
+        final CoapClusterNodeRegistry registry = mock(CoapClusterNodeRegistry.class);
+        when(registry.registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class)))
+                .thenReturn(Future.succeededFuture());
+        when(registry.unregisterNode(anyInt()))
+                .thenReturn(Future.failedFuture(new RuntimeException("intended unregister failure")));
+
+        adapter.setClusterNodeRegistry(registry);
+
+        final Promise<Void> startPromise = Promise.promise();
+        adapter.start(startPromise);
+
+        startPromise.future()
+                .compose(v -> {
+                    final Promise<Void> stopPromise = Promise.promise();
+                    adapter.stop(stopPromise);
+                    return stopPromise.future();
+                })
+                .onComplete(ctx.succeedingThenComplete());
     }
 
     private CoapServer getCoapServer(final boolean startupShouldFail) {
