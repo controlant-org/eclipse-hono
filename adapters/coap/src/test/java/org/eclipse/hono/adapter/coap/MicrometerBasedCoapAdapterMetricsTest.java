@@ -93,3 +93,4 @@ public class MicrometerBasedCoapAdapterMetricsTest {
         CoapAdapterMetrics.NOOP.incrementResumption(true);
     }
 }
+

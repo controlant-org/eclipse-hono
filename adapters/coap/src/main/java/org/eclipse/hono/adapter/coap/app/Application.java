@@ -96,3 +96,4 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
         return adapter;
     }
 }
+

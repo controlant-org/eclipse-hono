@@ -568,3 +568,4 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
         return adapter;
     }
 }
+

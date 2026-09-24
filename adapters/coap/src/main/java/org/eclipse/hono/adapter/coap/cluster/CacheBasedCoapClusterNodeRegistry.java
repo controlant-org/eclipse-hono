@@ -235,3 +235,4 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
         return null;
     }
 }
+

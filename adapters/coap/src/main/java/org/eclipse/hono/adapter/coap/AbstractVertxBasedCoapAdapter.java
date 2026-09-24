@@ -377,3 +377,4 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
         return Future.succeededFuture();
     }
 }
+

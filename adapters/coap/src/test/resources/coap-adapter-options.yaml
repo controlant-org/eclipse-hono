@@ -14,3 +14,4 @@ hono:
         node-ttl: PT35S
       session-resumption:
         enabled: false
+

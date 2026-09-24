@@ -144,3 +144,4 @@ public interface CoapAdapterMetrics extends Metrics {
     default void incrementResumption(final boolean success) {
     }
 }
+

@@ -245,3 +245,4 @@ public interface CoapAdapterOptions {
     @WithDefault("true")
     boolean sessionResumptionEnabled();
 }
+

@@ -214,3 +214,4 @@ public class CoapAdapterPropertiesTest {
         assertFalse(props.isSessionResumptionEnabled());
     }
 }
+

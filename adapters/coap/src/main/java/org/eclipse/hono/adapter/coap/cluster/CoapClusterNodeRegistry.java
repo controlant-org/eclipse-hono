@@ -66,3 +66,4 @@ public interface CoapClusterNodeRegistry {
      */
     Future<Map<Integer, InetSocketAddress>> getAllNodes();
 }
+

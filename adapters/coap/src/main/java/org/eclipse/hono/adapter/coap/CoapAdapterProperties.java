@@ -796,3 +796,4 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
         this.sessionResumptionEnabled = sessionResumptionEnabled;
     }
 }
+
