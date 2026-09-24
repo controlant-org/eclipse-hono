@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021, 2023 Contributors to the Eclipse Foundation
+ * Copyright (c) 2021, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -18,12 +18,16 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.eclipse.californium.core.coap.CoAP;
 import org.eclipse.californium.core.coap.option.MapBasedOptionRegistry;
@@ -36,9 +40,14 @@ import org.eclipse.californium.elements.config.CertificateAuthenticationMode;
 import org.eclipse.californium.elements.config.Configuration;
 import org.eclipse.californium.elements.config.UdpConfig;
 import org.eclipse.californium.scandium.DTLSConnector;
+import org.eclipse.californium.scandium.DtlsClusterConnector;
 import org.eclipse.californium.scandium.auth.ApplicationLevelInfoSupplier;
+import org.eclipse.californium.scandium.config.DtlsClusterConnectorConfig;
 import org.eclipse.californium.scandium.config.DtlsConfig;
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
+import org.eclipse.californium.scandium.dtls.MultiNodeConnectionIdGenerator;
+import org.eclipse.californium.scandium.dtls.SessionStore;
+import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore;
 import org.eclipse.californium.scandium.dtls.x509.NewAdvancedCertificateVerifier;
 import org.eclipse.californium.scandium.dtls.x509.SingleCertificateProvider;
@@ -93,6 +102,8 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
     private NewAdvancedCertificateVerifier certificateVerifier;
     private ApplicationLevelInfoSupplier deviceResolver = new DeviceInfoSupplier();
     private ObservationStore observationStore;
+    private DtlsClusterConnector.ClusterNodesProvider clusterNodesProvider;
+    private SessionStore sessionStore;
 
     /**
      * Creates a new factory for configuration properties.
@@ -105,9 +116,11 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
             final CoapAdapterProperties config) {
         this.vertx = Objects.requireNonNull(vertx);
         this.config = Objects.requireNonNull(config);
-        StandardOptionRegistry.setDefaultOptionRegistry(new MapBasedOptionRegistry(
-                StandardOptionRegistry.getDefaultOptionRegistry(),
-                TimeOption.DEFINITION));
+        if (!StandardOptionRegistry.getDefaultOptionRegistry().contains(TimeOption.DEFINITION)) {
+            StandardOptionRegistry.setDefaultOptionRegistry(new MapBasedOptionRegistry(
+                    StandardOptionRegistry.getDefaultOptionRegistry(),
+                    TimeOption.DEFINITION));
+        }
     }
 
     /**
@@ -159,6 +172,24 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
      */
     public void setObservationStore(final ObservationStore store) {
         this.observationStore = Objects.requireNonNull(store);
+    }
+
+    /**
+     * Sets the provider to use for discovering cluster nodes when cluster mode is enabled.
+     *
+     * @param clusterNodesProvider The provider.
+     */
+    public void setClusterNodesProvider(final DtlsClusterConnector.ClusterNodesProvider clusterNodesProvider) {
+        this.clusterNodesProvider = clusterNodesProvider;
+    }
+
+    /**
+     * Sets the session store to use for DTLS session resumption.
+     *
+     * @param sessionStore The store.
+     */
+    public void setSessionStore(final SessionStore sessionStore) {
+        this.sessionStore = sessionStore;
     }
 
     @Override
@@ -344,12 +375,26 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
         if (pskStore == null) {
             return Future.failedFuture(new IllegalStateException("pskStore property must be set for secure endpoint"));
         }
+        if (config.isClusterEnabled()) {
+            if (clusterNodesProvider == null) {
+                return Future.failedFuture(new IllegalStateException(
+                        "clusterNodesProvider must be set when cluster mode is enabled"));
+            }
+            if (config.getCidNodeId() < 0) {
+                return Future.failedFuture(new IllegalStateException(
+                        "cidNodeId must be configured when cluster mode is enabled"));
+            }
+        }
 
         LOG.info("creating secure endpoint");
 
         final DtlsConnectorConfig.Builder dtlsConfig = DtlsConnectorConfig.builder(networkConfig);
-        // prevent session resumption
-        dtlsConfig.set(DtlsConfig.DTLS_SERVER_USE_SESSION_ID, false);
+        if (config.isSessionResumptionEnabled() && sessionStore != null) {
+            dtlsConfig.set(DtlsConfig.DTLS_SERVER_USE_SESSION_ID, true);
+            dtlsConfig.setSessionStore(sessionStore);
+        } else {
+            dtlsConfig.set(DtlsConfig.DTLS_SERVER_USE_SESSION_ID, false);
+        }
         dtlsConfig.set(DtlsConfig.DTLS_ROLE, DtlsConfig.DtlsRole.SERVER_ONLY);
         dtlsConfig.set(DtlsConfig.DTLS_RECOMMENDED_CIPHER_SUITES_ONLY, true);
         dtlsConfig.set(DtlsConfig.DTLS_CLIENT_AUTHENTICATION_MODE, CertificateAuthenticationMode.NEEDED);
@@ -361,15 +406,38 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
         dtlsConfig.setAdvancedPskStore(pskStore);
         addIdentity(dtlsConfig);
         try {
-            final DtlsConnectorConfig dtlsConnectorConfig = dtlsConfig.build();
-            if (LOG.isInfoEnabled()) {
-                final String ciphers = dtlsConnectorConfig.getSupportedCipherSuites()
-                        .stream()
-                        .map(cipher -> cipher.name())
-                        .collect(Collectors.joining(", "));
-                LOG.info("creating secure endpoint supporting ciphers: {}", ciphers);
+            final DTLSConnector dtlsConnector;
+            if (config.isClusterEnabled()) {
+                final MultiNodeConnectionIdGenerator cidGen = new MultiNodeConnectionIdGenerator(
+                        config.getCidNodeId(), config.getCidLength());
+                dtlsConfig.setConnectionIdGenerator(cidGen);
+                dtlsConfig.set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, config.getCidLength());
+                final DtlsConnectorConfig dtlsConnectorConfig = dtlsConfig.build();
+                logCiphers(dtlsConnectorConfig);
+                final DtlsClusterConnectorConfig.Builder clusterConfigBuilder = DtlsClusterConnectorConfig.builder();
+                clusterConfigBuilder.setAddress(
+                        new InetSocketAddress(config.getClusterBindAddress(), config.getClusterPort()));
+                if (config.getClusterMacSecret() != null && !config.getClusterMacSecret().isEmpty()) {
+                    final SecretKey key = new SecretKeySpec(
+                            config.getClusterMacSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+                    clusterConfigBuilder.setSecure("coap-cluster", key);
+                }
+                final DtlsClusterConnectorConfig clusterConfig = clusterConfigBuilder.build();
+                dtlsConnector = new DtlsClusterConnector(dtlsConnectorConfig, clusterConfig, clusterNodesProvider);
+            } else if (config.isCidEnabled()) {
+                final SingleNodeConnectionIdGenerator cidGen =
+                        new SingleNodeConnectionIdGenerator(config.getCidLength());
+                dtlsConfig.setConnectionIdGenerator(cidGen);
+                dtlsConfig.set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, config.getCidLength());
+                final DtlsConnectorConfig dtlsConnectorConfig = dtlsConfig.build();
+                logCiphers(dtlsConnectorConfig);
+                dtlsConnector = new DTLSConnector(dtlsConnectorConfig);
+            } else {
+                final DtlsConnectorConfig dtlsConnectorConfig = dtlsConfig.build();
+                logCiphers(dtlsConnectorConfig);
+                dtlsConnector = new DTLSConnector(dtlsConnectorConfig);
             }
-            final DTLSConnector dtlsConnector = new DTLSConnector(dtlsConnectorConfig);
+
             final CoapEndpoint.Builder builder = CoapEndpoint.builder();
             builder.setConfiguration(networkConfig);
             builder.setConnector(dtlsConnector);
@@ -379,6 +447,16 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
         } catch (final IllegalStateException ex) {
             LOG.warn("failed to create secure endpoint", ex);
             return Future.failedFuture(ex);
+        }
+    }
+
+    private void logCiphers(final DtlsConnectorConfig dtlsConnectorConfig) {
+        if (LOG.isInfoEnabled()) {
+            final String ciphers = dtlsConnectorConfig.getSupportedCipherSuites()
+                    .stream()
+                    .map(cipher -> cipher.name())
+                    .collect(Collectors.joining(", "));
+            LOG.info("creating secure endpoint supporting ciphers: {}", ciphers);
         }
     }
 
