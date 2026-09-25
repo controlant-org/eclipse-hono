@@ -37,11 +37,6 @@ public interface CoapAdapterMetrics extends Metrics {
     String METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED = "hono.coap.dtls.cluster.forward.dropped";
 
     /**
-     * The name of the meter for DTLS session resumptions.
-     */
-    String METER_COAP_DTLS_RESUMPTION = "hono.coap.dtls.resumption";
-
-    /**
      * The tag name for cluster forwarding direction.
      */
     String TAG_DIRECTION = "direction";
@@ -55,21 +50,6 @@ public interface CoapAdapterMetrics extends Metrics {
      * The tag value for inbound cluster forwarding.
      */
     String TAG_VALUE_INBOUND = "inbound";
-
-    /**
-     * The tag name for resumption outcome.
-     */
-    String TAG_OUTCOME = "outcome";
-
-    /**
-     * The tag value for a successful resumption outcome.
-     */
-    String TAG_VALUE_SUCCEEDED = "succeeded";
-
-    /**
-     * The tag value for a failed resumption outcome.
-     */
-    String TAG_VALUE_FAILED = "failed";
 
     /**
      * The tag name for cluster forward drop reason.
@@ -134,14 +114,6 @@ public interface CoapAdapterMetrics extends Metrics {
      * @param reason The reason why the datagram was dropped.
      */
     default void incrementClusterForwardDropped(final String reason) {
-    }
-
-    /**
-     * Increments the counter for DTLS session resumption attempts.
-     *
-     * @param success {@code true} if the resumption succeeded, {@code false} otherwise.
-     */
-    default void incrementResumption(final boolean success) {
     }
 }
 

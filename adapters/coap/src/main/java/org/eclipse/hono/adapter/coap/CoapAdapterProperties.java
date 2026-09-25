@@ -100,10 +100,6 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
      * The default TTL for cluster node entries.
      */
     public static final Duration DEFAULT_CLUSTER_NODE_TTL = Duration.ofSeconds(30);
-    /**
-     * The default for enabling DTLS session resumption.
-     */
-    public static final boolean DEFAULT_SESSION_RESUMPTION_ENABLED = true;
 
     static {
         DEFAULT_CONNECTOR_THREADS = 2;
@@ -138,7 +134,6 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
     private String clusterMacSecret = null;
     private Duration clusterHeartbeat = DEFAULT_CLUSTER_HEARTBEAT;
     private Duration clusterNodeTtl = DEFAULT_CLUSTER_NODE_TTL;
-    private boolean sessionResumptionEnabled = DEFAULT_SESSION_RESUMPTION_ENABLED;
 
     /**
      * Creates properties using default values.
@@ -174,7 +169,6 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
         setClusterMacSecret(options.clusterMacSecret().orElse(null));
         setClusterHeartbeat(options.clusterHeartbeat());
         setClusterNodeTtl(options.clusterNodeTtl());
-        setSessionResumptionEnabled(options.sessionResumptionEnabled());
     }
 
     /**
@@ -772,28 +766,6 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
             throw new IllegalArgumentException("cluster node TTL must be positive");
         }
         this.clusterNodeTtl = Duration.ofMillis(millis);
-    }
-
-    /**
-     * Checks if DTLS session resumption is enabled.
-     * <p>
-     * The default value of this property is {@value #DEFAULT_SESSION_RESUMPTION_ENABLED}.
-     *
-     * @return {@code true} if session resumption is enabled.
-     */
-    public final boolean isSessionResumptionEnabled() {
-        return sessionResumptionEnabled;
-    }
-
-    /**
-     * Sets whether DTLS session resumption is enabled.
-     * <p>
-     * The default value of this property is {@value #DEFAULT_SESSION_RESUMPTION_ENABLED}.
-     *
-     * @param sessionResumptionEnabled {@code true} to enable session resumption.
-     */
-    public final void setSessionResumptionEnabled(final boolean sessionResumptionEnabled) {
-        this.sessionResumptionEnabled = sessionResumptionEnabled;
     }
 }
 

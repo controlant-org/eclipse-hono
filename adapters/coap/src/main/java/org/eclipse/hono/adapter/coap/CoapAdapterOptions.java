@@ -235,14 +235,5 @@ public interface CoapAdapterOptions {
     @WithName("dtls.cluster.node-ttl")
     @WithDefault("PT30S")
     Duration clusterNodeTtl();
-
-    /**
-     * Checks if DTLS session resumption is enabled.
-     *
-     * @return {@code true} if session resumption is enabled.
-     */
-    @WithName("dtls.session-resumption.enabled")
-    @WithDefault("true")
-    boolean sessionResumptionEnabled();
 }
 

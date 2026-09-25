@@ -18,8 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import java.lang.reflect.Field;
@@ -32,7 +30,6 @@ import org.eclipse.californium.scandium.config.DtlsConfig;
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
 import org.eclipse.californium.scandium.dtls.ConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.MultiNodeConnectionIdGenerator;
-import org.eclipse.californium.scandium.dtls.SessionStore;
 import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore;
 import org.eclipse.hono.adapter.coap.CoapAdapterProperties;
@@ -237,92 +234,6 @@ public class ConfigBasedCoapEndpointFactoryTest {
             ctx.verify(() -> {
                 assertInstanceOf(IllegalStateException.class, cause);
                 assertEquals("cidNodeId must be configured when cluster mode is enabled", cause.getMessage());
-            });
-            ctx.completeNow();
-        }));
-    }
-
-    /**
-     * Verifies that session resumption is enabled when configured and SessionStore is provided.
-     *
-     * @param ctx The test context.
-     */
-    @Test
-    void testSessionResumptionEnabledWithSessionStore(final VertxTestContext ctx) {
-        properties.setSessionResumptionEnabled(true);
-
-        final ConfigBasedCoapEndpointFactory factory = new ConfigBasedCoapEndpointFactory(vertx, properties);
-        factory.setPskStore(mock(AdvancedPskStore.class));
-        final SessionStore sessionStore = mock(SessionStore.class);
-        factory.setSessionStore(sessionStore);
-
-        factory.getSecureEndpoint().onComplete(ctx.succeeding(endpoint -> {
-            ctx.verify(() -> {
-                assertNotNull(endpoint);
-                final Object connector = ((CoapEndpoint) endpoint).getConnector();
-                assertInstanceOf(DTLSConnector.class, connector);
-
-                final DTLSConnector dtlsConnector = (DTLSConnector) connector;
-                final DtlsConnectorConfig dtlsConfig = getDtlsConnectorConfig(dtlsConnector);
-                assertTrue(dtlsConfig.useServerSessionId());
-                assertSame(sessionStore, dtlsConfig.getSessionStore());
-                assertTrue(dtlsConfig.getConfiguration().get(DtlsConfig.DTLS_SERVER_USE_SESSION_ID));
-            });
-            ctx.completeNow();
-        }));
-    }
-
-    /**
-     * Verifies that session resumption is disabled when configured as false even if SessionStore is provided.
-     *
-     * @param ctx The test context.
-     */
-    @Test
-    void testSessionResumptionDisabledWithSessionStore(final VertxTestContext ctx) {
-        properties.setSessionResumptionEnabled(false);
-
-        final ConfigBasedCoapEndpointFactory factory = new ConfigBasedCoapEndpointFactory(vertx, properties);
-        factory.setPskStore(mock(AdvancedPskStore.class));
-        final SessionStore sessionStore = mock(SessionStore.class);
-        factory.setSessionStore(sessionStore);
-
-        factory.getSecureEndpoint().onComplete(ctx.succeeding(endpoint -> {
-            ctx.verify(() -> {
-                assertNotNull(endpoint);
-                final Object connector = ((CoapEndpoint) endpoint).getConnector();
-                assertInstanceOf(DTLSConnector.class, connector);
-
-                final DTLSConnector dtlsConnector = (DTLSConnector) connector;
-                final DtlsConnectorConfig dtlsConfig = getDtlsConnectorConfig(dtlsConnector);
-                assertFalse(dtlsConfig.useServerSessionId());
-                assertNull(dtlsConfig.getSessionStore());
-                assertFalse(dtlsConfig.getConfiguration().get(DtlsConfig.DTLS_SERVER_USE_SESSION_ID));
-            });
-            ctx.completeNow();
-        }));
-    }
-
-    /**
-     * Verifies that session resumption is disabled when session store is not provided.
-     *
-     * @param ctx The test context.
-     */
-    @Test
-    void testSessionResumptionEnabledWithoutSessionStore(final VertxTestContext ctx) {
-        properties.setSessionResumptionEnabled(true);
-
-        final ConfigBasedCoapEndpointFactory factory = new ConfigBasedCoapEndpointFactory(vertx, properties);
-        factory.setPskStore(mock(AdvancedPskStore.class));
-        // sessionStore NOT set
-
-        factory.getSecureEndpoint().onComplete(ctx.succeeding(endpoint -> {
-            ctx.verify(() -> {
-                assertNotNull(endpoint);
-                final DTLSConnector dtlsConnector = (DTLSConnector) ((CoapEndpoint) endpoint).getConnector();
-                final DtlsConnectorConfig dtlsConfig = getDtlsConnectorConfig(dtlsConnector);
-                assertFalse(dtlsConfig.useServerSessionId());
-                assertNull(dtlsConfig.getSessionStore());
-                assertFalse(dtlsConfig.getConfiguration().get(DtlsConfig.DTLS_SERVER_USE_SESSION_ID));
             });
             ctx.completeNow();
         }));

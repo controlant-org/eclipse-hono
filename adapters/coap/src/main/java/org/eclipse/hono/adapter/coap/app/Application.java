@@ -26,7 +26,6 @@ import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
 import org.eclipse.hono.adapter.coap.impl.ConfigBasedCoapEndpointFactory;
 import org.eclipse.hono.adapter.coap.impl.VertxBasedCoapAdapter;
-import org.eclipse.hono.adapter.coap.session.CacheBasedDtlsSessionStore;
 import org.eclipse.hono.deviceconnection.common.Cache;
 import org.eclipse.hono.util.CommandConstants;
 import org.eclipse.hono.util.EventConstants;
@@ -74,7 +73,7 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
         endpointFactory.setPskStore(new DeviceRegistryBasedPskStore(adapter, tracer));
         endpointFactory.setCertificateVerifier(new DeviceRegistryBasedCertificateVerifier(vertx, adapter, tracer));
 
-        if (protocolAdapterProperties.isClusterEnabled() || protocolAdapterProperties.isSessionResumptionEnabled()) {
+        if (protocolAdapterProperties.isClusterEnabled()) {
             if (cacheInstance != null && cacheInstance.isResolvable()) {
                 final Cache<String, String> cache = cacheInstance.get();
                 final CacheBasedCoapClusterNodeRegistry registry = new CacheBasedCoapClusterNodeRegistry(cache);
@@ -82,12 +81,8 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
                 final CacheBasedClusterNodesProvider provider = new CacheBasedClusterNodesProvider(registry);
                 adapter.setClusterNodesProvider(provider);
                 endpointFactory.setClusterNodesProvider(provider);
-                final CacheBasedDtlsSessionStore sessionStore = new CacheBasedDtlsSessionStore(cache, metrics);
-                endpointFactory.setSessionStore(sessionStore);
-            } else if (protocolAdapterProperties.isClusterEnabled()) {
-                LOG.warn("Cluster mode is enabled, but no Cache bean is available");
             } else {
-                LOG.info("Session resumption is enabled, but no Cache bean is available. Resumption with central store is disabled");
+                LOG.warn("Cluster mode is enabled, but no Cache bean is available");
             }
         }
 

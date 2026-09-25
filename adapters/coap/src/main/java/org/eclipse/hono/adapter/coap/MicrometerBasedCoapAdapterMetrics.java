@@ -28,8 +28,6 @@ public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAd
     private final Counter cidReceivedCounter;
     private final Counter clusterForwardedOutboundCounter;
     private final Counter clusterForwardedInboundCounter;
-    private final Counter resumptionSuccessCounter;
-    private final Counter resumptionFailureCounter;
 
     /**
      * Create a new metrics instance for COAP adapters.
@@ -56,14 +54,6 @@ public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAd
                 .description("Number of datagrams received from another cluster node")
                 .tag(TAG_DIRECTION, TAG_VALUE_INBOUND)
                 .register(registry);
-        this.resumptionSuccessCounter = Counter.builder(METER_COAP_DTLS_RESUMPTION)
-                .description("Number of successful DTLS session resumptions")
-                .tag(TAG_OUTCOME, TAG_VALUE_SUCCEEDED)
-                .register(registry);
-        this.resumptionFailureCounter = Counter.builder(METER_COAP_DTLS_RESUMPTION)
-                .description("Number of failed DTLS session resumptions")
-                .tag(TAG_OUTCOME, TAG_VALUE_FAILED)
-                .register(registry);
     }
 
     @Override
@@ -88,15 +78,6 @@ public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAd
                 .tag(TAG_REASON, reason != null ? reason : DROP_REASON_UNKNOWN)
                 .register(this.registry)
                 .increment();
-    }
-
-    @Override
-    public void incrementResumption(final boolean success) {
-        if (success) {
-            this.resumptionSuccessCounter.increment();
-        } else {
-            this.resumptionFailureCounter.increment();
-        }
     }
 }
 

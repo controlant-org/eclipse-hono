@@ -46,7 +46,6 @@ public class CoapAdapterPropertiesTest {
         assertNull(props.getClusterMacSecret());
         assertEquals(Duration.ofMillis(10_000), props.getClusterHeartbeat());
         assertEquals(Duration.ofMillis(30_000), props.getClusterNodeTtl());
-        assertTrue(props.isSessionResumptionEnabled());
     }
 
     /**
@@ -88,9 +87,6 @@ public class CoapAdapterPropertiesTest {
 
         props.setClusterNodeTtl(25_000);
         assertEquals(Duration.ofMillis(25_000), props.getClusterNodeTtl());
-
-        props.setSessionResumptionEnabled(false);
-        assertFalse(props.isSessionResumptionEnabled());
     }
 
     /**
@@ -166,7 +162,6 @@ public class CoapAdapterPropertiesTest {
         assertTrue(options.clusterMacSecret().isEmpty());
         assertEquals(Duration.ofSeconds(10), options.clusterHeartbeat());
         assertEquals(Duration.ofSeconds(30), options.clusterNodeTtl());
-        assertTrue(options.sessionResumptionEnabled());
 
         final CoapAdapterProperties props = new CoapAdapterProperties(options);
         assertFalse(props.isCidEnabled());
@@ -178,7 +173,6 @@ public class CoapAdapterPropertiesTest {
         assertNull(props.getClusterMacSecret());
         assertEquals(Duration.ofSeconds(10), props.getClusterHeartbeat());
         assertEquals(Duration.ofSeconds(30), props.getClusterNodeTtl());
-        assertTrue(props.isSessionResumptionEnabled());
     }
 
     /**
@@ -199,7 +193,6 @@ public class CoapAdapterPropertiesTest {
         assertEquals(Optional.of("secret-key"), options.clusterMacSecret());
         assertEquals(Duration.ofSeconds(12), options.clusterHeartbeat());
         assertEquals(Duration.ofSeconds(35), options.clusterNodeTtl());
-        assertFalse(options.sessionResumptionEnabled());
 
         final CoapAdapterProperties props = new CoapAdapterProperties(options);
         assertTrue(props.isCidEnabled());
@@ -211,7 +204,6 @@ public class CoapAdapterPropertiesTest {
         assertEquals("secret-key", props.getClusterMacSecret());
         assertEquals(Duration.ofSeconds(12), props.getClusterHeartbeat());
         assertEquals(Duration.ofSeconds(35), props.getClusterNodeTtl());
-        assertFalse(props.isSessionResumptionEnabled());
     }
 }
 

@@ -73,24 +73,12 @@ public class MicrometerBasedCoapAdapterMetricsTest {
     }
 
     @Test
-    void testResumptionMetrics() {
-        metrics.incrementResumption(true);
-        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_RESUMPTION)
-                .tag(CoapAdapterMetrics.TAG_OUTCOME, CoapAdapterMetrics.TAG_VALUE_SUCCEEDED).counter().count());
-
-        metrics.incrementResumption(false);
-        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_RESUMPTION)
-                .tag(CoapAdapterMetrics.TAG_OUTCOME, CoapAdapterMetrics.TAG_VALUE_FAILED).counter().count());
-    }
-
-    @Test
     void testNoopMetrics() {
         // Ensure NOOP instance methods execute without errors
         CoapAdapterMetrics.NOOP.incrementCidReceived();
         CoapAdapterMetrics.NOOP.incrementClusterForwardedOutbound();
         CoapAdapterMetrics.NOOP.incrementClusterForwardedInbound();
         CoapAdapterMetrics.NOOP.incrementClusterForwardDropped(CoapAdapterMetrics.DROP_REASON_NODE_OFFLINE);
-        CoapAdapterMetrics.NOOP.incrementResumption(true);
     }
 }
 

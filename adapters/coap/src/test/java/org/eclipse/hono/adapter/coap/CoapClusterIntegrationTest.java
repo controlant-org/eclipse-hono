@@ -14,11 +14,7 @@
 package org.eclipse.hono.adapter.coap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 
 import java.lang.reflect.Field;
 import java.net.DatagramPacket;
@@ -57,15 +53,12 @@ import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
 import org.eclipse.californium.scandium.dtls.Connection;
 import org.eclipse.californium.scandium.dtls.ConnectionId;
 import org.eclipse.californium.scandium.dtls.ContentType;
-import org.eclipse.californium.scandium.dtls.DTLSSession;
 import org.eclipse.californium.scandium.dtls.MultiNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.ResumptionSupportingConnectionStore;
-import org.eclipse.californium.scandium.dtls.SessionId;
 import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedSinglePskStore;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
-import org.eclipse.hono.adapter.coap.session.CacheBasedDtlsSessionStore;
 import org.eclipse.hono.deviceconnection.common.Cache;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,7 +69,7 @@ import io.vertx.core.json.JsonObject;
 
 /**
  * Integration tests verifying DTLS Connection ID (CID) cluster forwarding,
- * NAT rebinding handling, and distributed session resumption across cluster nodes.
+ * and NAT rebinding handling across cluster nodes.
  */
 public class CoapClusterIntegrationTest {
 
@@ -88,8 +81,6 @@ public class CoapClusterIntegrationTest {
     private CacheBasedCoapClusterNodeRegistry registry;
     private CacheBasedClusterNodesProvider provider0;
     private CacheBasedClusterNodesProvider provider1;
-    private CoapAdapterMetrics metrics;
-    private CacheBasedDtlsSessionStore sessionStore;
 
     private CoapServer server0;
     private CoapServer server1;
@@ -109,12 +100,6 @@ public class CoapClusterIntegrationTest {
         registry = new CacheBasedCoapClusterNodeRegistry(sharedCache, clock);
         provider0 = new CacheBasedClusterNodesProvider(registry);
         provider1 = new CacheBasedClusterNodesProvider(registry);
-        metrics = mock(CoapAdapterMetrics.class);
-        sessionStore = new CacheBasedDtlsSessionStore(
-                sharedCache,
-                metrics,
-                Duration.ofHours(24),
-                Duration.ofSeconds(2));
     }
 
     /**
@@ -167,8 +152,7 @@ public class CoapClusterIntegrationTest {
 
     private CoapServer createServerNode(
             final int nodeId,
-            final CacheBasedClusterNodesProvider provider,
-            final CacheBasedDtlsSessionStore store) {
+            final CacheBasedClusterNodesProvider provider) {
 
         final Configuration config = Configuration.createStandardWithoutFile();
         final DtlsConnectorConfig.Builder dtlsBuilder = DtlsConnectorConfig.builder(config)
@@ -176,11 +160,6 @@ public class CoapClusterIntegrationTest {
                 .setAdvancedPskStore(new AdvancedSinglePskStore(PSK_IDENTITY, PSK_KEY))
                 .setConnectionIdGenerator(new MultiNodeConnectionIdGenerator(nodeId, CID_LENGTH))
                 .set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, CID_LENGTH);
-
-        if (store != null) {
-            dtlsBuilder.set(DtlsConfig.DTLS_SERVER_USE_SESSION_ID, true);
-            dtlsBuilder.setSessionStore(store);
-        }
 
         final DtlsClusterConnectorConfig.Builder clusterConfigBuilder = DtlsClusterConnectorConfig.builder();
         clusterConfigBuilder.setAddress(new InetSocketAddress("127.0.0.1", 0));
@@ -221,8 +200,8 @@ public class CoapClusterIntegrationTest {
      */
     @Test
     void testNatRebindingClusterForwarding() throws Exception {
-        server0 = createServerNode(0, provider0, sessionStore);
-        server1 = createServerNode(1, provider1, sessionStore);
+        server0 = createServerNode(0, provider0);
+        server1 = createServerNode(1, provider1);
 
         final InetSocketAddress clusterAddr0 = connector0.getClusterInternalAddress();
         final InetSocketAddress clusterAddr1 = connector1.getClusterInternalAddress();
@@ -282,94 +261,13 @@ public class CoapClusterIntegrationTest {
     }
 
     /**
-     * Verifies distributed session resumption on node failover using the shared session store.
-     *
-     * @throws Exception if an error occurs.
-     */
-    @Test
-    void testSessionResumptionOnFailover() throws Exception {
-        server0 = createServerNode(0, provider0, sessionStore);
-        server1 = createServerNode(1, provider1, sessionStore);
-
-        final InetSocketAddress clusterAddr0 = connector0.getClusterInternalAddress();
-        final InetSocketAddress clusterAddr1 = connector1.getClusterInternalAddress();
-
-        registry.registerNode(0, clusterAddr0, Duration.ofSeconds(60)).toCompletionStage().toCompletableFuture().join();
-        registry.registerNode(1, clusterAddr1, Duration.ofSeconds(60)).toCompletionStage().toCompletableFuture().join();
-
-        provider0.refresh().toCompletionStage().toCompletableFuture().join();
-        provider1.refresh().toCompletionStage().toCompletableFuture().join();
-
-        final Configuration clientConfig = Configuration.createStandardWithoutFile();
-        final DtlsConnectorConfig.Builder clientDtlsBuilder = DtlsConnectorConfig.builder(clientConfig)
-                .setAddress(new InetSocketAddress("127.0.0.1", 0))
-                .setAdvancedPskStore(new AdvancedSinglePskStore(PSK_IDENTITY, PSK_KEY))
-                .setConnectionIdGenerator(new SingleNodeConnectionIdGenerator(CID_LENGTH))
-                .set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, CID_LENGTH);
-
-        final DTLSConnector clientConnector = new DTLSConnector(clientDtlsBuilder.build());
-        final CoapEndpoint clientEndpoint = CoapEndpoint.builder()
-                .setConfiguration(clientConfig)
-                .setConnector(clientConnector)
-                .build();
-        clientEndpoint.start();
-        endpointsToCleanUp.add(clientEndpoint);
-
-        final InetSocketAddress node0PublicAddr = connector0.getAddress();
-        final InetSocketAddress node1PublicAddr = connector1.getAddress();
-
-        final CoapClient client = new CoapClient("coaps://127.0.0.1:" + node0PublicAddr.getPort() + "/telemetry");
-        client.setEndpoint(clientEndpoint);
-        clientsToCleanUp.add(client);
-
-        // 1. Initial handshake and request to Node 0
-        final CoapResponse response1 = client.post("initial-payload", MediaTypeRegistry.TEXT_PLAIN);
-        assertNotNull(response1, "First CoAP response should not be null");
-        assertEquals(ResponseCode.CHANGED, response1.getCode());
-
-        // Verify session was established and stored in shared session store
-        final ResumptionSupportingConnectionStore clientStore = getConnectionStore(clientConnector);
-        final Connection connection = clientStore.get(node0PublicAddr);
-        assertNotNull(connection, "Client connection to Node 0 should exist");
-        final SessionId sessionId = connection.getEstablishedSessionIdentifier();
-        assertNotNull(sessionId, "Established session ID should not be null");
-        assertFalse(sessionId.isEmpty(), "Established session ID should not be empty");
-
-        final DTLSSession storedSession = sessionStore.get(sessionId);
-        assertNotNull(storedSession, "Session must be stored in distributed session store");
-        assertEquals(sessionId, storedSession.getSessionIdentifier());
-
-        // 2. Stop Node 0 (failover)
-        server0.stop();
-        server0.destroy();
-        server0 = null;
-
-        // 3. Initiate resumption to Node 1 using the established session
-        clientStore.update(connection, node1PublicAddr);
-        connection.setResumptionRequired(true);
-        client.setURI("coaps://127.0.0.1:" + node1PublicAddr.getPort() + "/telemetry");
-
-        final CoapResponse response2 = client.post("resumed-payload", MediaTypeRegistry.TEXT_PLAIN);
-        assertNotNull(response2, "Resumed CoAP response from Node 1 should not be null");
-        assertEquals(ResponseCode.CHANGED, response2.getCode());
-
-        // Verify Node 1 assigned its own CID upon resumption
-        final ConnectionId resumedCid = connection.getEstablishedDtlsContext().getWriteConnectionId();
-        assertNotNull(resumedCid, "Resumed connection should have write CID");
-        assertEquals((byte) 1, resumedCid.getBytes()[0], "Resumed CID prefix should match Node 1 ID");
-
-        // Verify resumption metric was incremented
-        verify(metrics, atLeastOnce()).incrementResumption(true);
-    }
-
-    /**
      * Verifies that a foreign packet arriving for an unknown or offline node is dropped gracefully without crashing.
      *
      * @throws Exception if an error occurs.
      */
     @Test
     void testClusterForwardDroppedWhenNodeOffline() throws Exception {
-        server1 = createServerNode(1, provider1, sessionStore);
+        server1 = createServerNode(1, provider1);
         provider1.refresh().toCompletionStage().toCompletableFuture().join();
 
         final InetSocketAddress node1PublicAddr = connector1.getAddress();

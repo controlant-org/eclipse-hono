@@ -46,7 +46,6 @@ import org.eclipse.californium.scandium.config.DtlsClusterConnectorConfig;
 import org.eclipse.californium.scandium.config.DtlsConfig;
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
 import org.eclipse.californium.scandium.dtls.MultiNodeConnectionIdGenerator;
-import org.eclipse.californium.scandium.dtls.SessionStore;
 import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore;
 import org.eclipse.californium.scandium.dtls.x509.NewAdvancedCertificateVerifier;
@@ -103,7 +102,6 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
     private ApplicationLevelInfoSupplier deviceResolver = new DeviceInfoSupplier();
     private ObservationStore observationStore;
     private DtlsClusterConnector.ClusterNodesProvider clusterNodesProvider;
-    private SessionStore sessionStore;
 
     /**
      * Creates a new factory for configuration properties.
@@ -181,15 +179,6 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
      */
     public void setClusterNodesProvider(final DtlsClusterConnector.ClusterNodesProvider clusterNodesProvider) {
         this.clusterNodesProvider = clusterNodesProvider;
-    }
-
-    /**
-     * Sets the session store to use for DTLS session resumption.
-     *
-     * @param sessionStore The store.
-     */
-    public void setSessionStore(final SessionStore sessionStore) {
-        this.sessionStore = sessionStore;
     }
 
     @Override
@@ -389,12 +378,8 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
         LOG.info("creating secure endpoint");
 
         final DtlsConnectorConfig.Builder dtlsConfig = DtlsConnectorConfig.builder(networkConfig);
-        if (config.isSessionResumptionEnabled() && sessionStore != null) {
-            dtlsConfig.set(DtlsConfig.DTLS_SERVER_USE_SESSION_ID, true);
-            dtlsConfig.setSessionStore(sessionStore);
-        } else {
-            dtlsConfig.set(DtlsConfig.DTLS_SERVER_USE_SESSION_ID, false);
-        }
+        // prevent session resumption
+        dtlsConfig.set(DtlsConfig.DTLS_SERVER_USE_SESSION_ID, false);
         dtlsConfig.set(DtlsConfig.DTLS_ROLE, DtlsConfig.DtlsRole.SERVER_ONLY);
         dtlsConfig.set(DtlsConfig.DTLS_RECOMMENDED_CIPHER_SUITES_ONLY, true);
         dtlsConfig.set(DtlsConfig.DTLS_CLIENT_AUTHENTICATION_MODE, CertificateAuthenticationMode.NEEDED);
