@@ -15,13 +15,16 @@ package org.eclipse.hono.adapter.coap;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -29,11 +32,13 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 
 import javax.crypto.SecretKey;
 
@@ -60,13 +65,26 @@ import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedSinglePskStore;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
+import org.eclipse.hono.adapter.coap.cluster.ClusterNodeConflictException;
+import org.eclipse.hono.adapter.coap.cluster.CoapClusterMembership;
 import org.eclipse.hono.adapter.coap.cluster.InMemoryTestCache;
 import org.eclipse.hono.adapter.coap.cluster.MacProtectedDtlsClusterConnector;
 import org.eclipse.hono.adapter.coap.cluster.MetricsReportingDtlsClusterHealth;
 import org.eclipse.hono.adapter.coap.cluster.TestClock;
+import org.eclipse.hono.deviceconnection.redis.client.RedisCache;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+
+import io.vertx.core.Future;
+import io.vertx.core.Vertx;
+import io.vertx.redis.client.Redis;
+import io.vertx.redis.client.RedisAPI;
 
 /**
  * Integration tests verifying DTLS Connection ID (CID) based cluster forwarding
@@ -145,6 +163,42 @@ public class CoapClusterIntegrationTest {
             }
             server1 = null;
         }
+    }
+
+    private static <T> T await(final Future<T> future) {
+        return future.toCompletionStage().toCompletableFuture().join();
+    }
+
+    private DTLSConnector startCidClientConnector() {
+        final Configuration clientConfig = Configuration.createStandardWithoutFile();
+        final DTLSConnector clientConnector = new DTLSConnector(DtlsConnectorConfig.builder(clientConfig)
+                .setAddress(new InetSocketAddress("127.0.0.1", 0))
+                .setAdvancedPskStore(new AdvancedSinglePskStore(PSK_IDENTITY, PSK_KEY))
+                .setConnectionIdGenerator(new SingleNodeConnectionIdGenerator(CID_LENGTH))
+                .set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, CID_LENGTH)
+                .build());
+        final CoapEndpoint clientEndpoint = CoapEndpoint.builder()
+                .setConfiguration(clientConfig)
+                .setConnector(clientConnector)
+                .build();
+        try {
+            clientEndpoint.start();
+        } catch (final IOException e) {
+            throw new IllegalStateException("cannot start client endpoint", e);
+        }
+        endpointsToCleanUp.add(clientEndpoint);
+        return clientConnector;
+    }
+
+    private CoapClient newClient(final DTLSConnector clientConnector, final InetSocketAddress server) {
+        final CoapClient client = new CoapClient("coaps://127.0.0.1:" + server.getPort() + "/telemetry");
+        client.setEndpoint(endpointsToCleanUp.stream()
+                .filter(ep -> ep.getConnector() == clientConnector)
+                .findFirst()
+                .orElseThrow());
+        client.setTimeout(2000L);
+        clientsToCleanUp.add(client);
+        return client;
     }
 
     private static ResumptionSupportingConnectionStore getConnectionStore(final DTLSConnector connector) {
@@ -395,6 +449,106 @@ public class CoapClusterIntegrationTest {
         assertNull(client.post("rebound-payload", MediaTypeRegistry.TEXT_PLAIN));
         verify(metrics0, timeout(1000).atLeastOnce()).reportClusterRecordDropped(
                 CoapAdapterMetrics.TAG_VALUE_FORWARD, CoapAdapterMetrics.DROP_REASON_MAC_INVALID);
+    }
+
+    /**
+     * Tests verifying cluster forwarding between nodes that share their registrations by means of a Redis server.
+     */
+    @Nested
+    @Testcontainers(disabledWithoutDocker = true)
+    class WithRedisCache {
+
+        @Container
+        private static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:8-alpine"))
+                .withExposedPorts(6379);
+
+        private Vertx vertx;
+        private Redis redisClient;
+        private RedisCache redisCache;
+
+        @BeforeEach
+        void setUpRedis() {
+            vertx = Vertx.vertx();
+            redisClient = Redis.createClient(
+                    vertx,
+                    "redis://%s:%d".formatted(REDIS.getHost(), REDIS.getMappedPort(6379)));
+            redisCache = RedisCache.from(RedisAPI.api(redisClient));
+        }
+
+        @AfterEach
+        void closeRedis() {
+            redisClient.close();
+            vertx.close();
+        }
+
+        private CacheBasedCoapClusterNodeRegistry newRegistry(final String hostName) {
+            return new CacheBasedCoapClusterNodeRegistry(redisCache, Clock.systemUTC(), hostName + "-instance", hostName);
+        }
+
+        private CoapClusterMembership newMembership(
+                final CacheBasedCoapClusterNodeRegistry nodeRegistry,
+                final CacheBasedClusterNodesProvider nodesProvider,
+                final int nodeId,
+                final DtlsClusterConnector connector) {
+            return new CoapClusterMembership(
+                    vertx,
+                    nodeRegistry,
+                    nodesProvider,
+                    nodeId,
+                    connector.getClusterInternalAddress(),
+                    Duration.ofSeconds(30),
+                    Duration.ofSeconds(1),
+                    CoapClusterMembership.DEFAULT_LEAVE_TIMEOUT);
+        }
+
+        /**
+         * Verifies that nodes which have joined the cluster by means of a Redis based registry forward
+         * the records of a device whose address has changed, that a node ID cannot be registered by an
+         * adapter instance on another host, and that leaving the cluster removes the registrations.
+         *
+         * @throws Exception if an error occurs.
+         */
+        @Test
+        void testClusterForwardingWithRedisBasedMembership() throws Exception {
+            final CacheBasedCoapClusterNodeRegistry registry0 = newRegistry("coap-0");
+            final CacheBasedCoapClusterNodeRegistry registry1 = newRegistry("coap-1");
+            final CacheBasedClusterNodesProvider redisProvider0 = new CacheBasedClusterNodesProvider(registry0);
+            final CacheBasedClusterNodesProvider redisProvider1 = new CacheBasedClusterNodesProvider(registry1);
+            server0 = createServerNode(0, redisProvider0);
+            server1 = createServerNode(1, redisProvider1);
+            final CoapClusterMembership membership0 = newMembership(registry0, redisProvider0, 0, connector0);
+            final CoapClusterMembership membership1 = newMembership(registry1, redisProvider1, 1, connector1);
+
+            await(membership0.join());
+            await(membership1.join());
+            // node 0 has joined before node 1, make it see node 1 without waiting for the next renewal
+            await(redisProvider0.refresh());
+            assertEquals(connector0.getClusterInternalAddress(), redisProvider1.getClusterNode(0));
+            assertEquals(connector1.getClusterInternalAddress(), redisProvider0.getClusterNode(1));
+
+            final DTLSConnector clientConnector = startCidClientConnector();
+            final CoapClient client = newClient(clientConnector, connector0.getAddress());
+            assertEquals(ResponseCode.CHANGED, client.post("initial-payload", MediaTypeRegistry.TEXT_PLAIN).getCode());
+
+            // the device's records now arrive at node 1, which forwards them to node 0
+            final Connection connection = getConnectionStore(clientConnector).get(connector0.getAddress());
+            getConnectionStore(clientConnector).update(connection, connector1.getAddress());
+            client.setURI("coaps://127.0.0.1:" + connector1.getAddress().getPort() + "/telemetry");
+            final CoapResponse response = client.post("rebound-payload", MediaTypeRegistry.TEXT_PLAIN);
+            assertNotNull(response, "response forwarded via node 1 should not be null");
+            assertEquals(ResponseCode.CHANGED, response.getCode());
+            verify(metrics1).reportClusterRecordForwarded(CoapAdapterMetrics.TAG_VALUE_OUTBOUND);
+            verify(metrics0).reportClusterRecordForwarded(CoapAdapterMetrics.TAG_VALUE_INBOUND);
+
+            // an adapter instance on another host cannot take over a live node ID
+            final CompletionException conflict = assertThrows(CompletionException.class, () -> await(
+                    newRegistry("coap-9").registerNode(0, new InetSocketAddress("10.0.0.9", 5685), Duration.ofSeconds(30))));
+            assertInstanceOf(ClusterNodeConflictException.class, conflict.getCause());
+
+            await(membership0.leave());
+            await(membership1.leave());
+            assertTrue(await(registry0.getAllNodes()).isEmpty(), "registrations should have been removed");
+        }
     }
 
     /**
