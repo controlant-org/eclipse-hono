@@ -45,8 +45,12 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     /**
      * Key prefix for node entries in the cache.
+     * <p>
+     * The prefix is a Redis hash tag, which makes all node entries map to the same hash slot of a
+     * Redis Cluster. The entries of all nodes can therefore be read with a single {@code MGET}
+     * command, which a Redis Cluster client would otherwise split by hash slot.
      */
-    public static final String KEY_PREFIX = "coap:node:";
+    public static final String KEY_PREFIX = "{coap:node}:";
 
     /**
      * Minimum valid node ID.
