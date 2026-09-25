@@ -15,11 +15,15 @@ package org.eclipse.hono.deviceconnection.redis.client;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +34,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.junit5.Timeout;
 import io.vertx.junit5.VertxExtension;
@@ -54,6 +59,8 @@ class RedisCacheTest {
     @Container
     private static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:8-alpine"))
             .withExposedPorts(6379);
+
+    private static final Pattern MGET_CALLS = Pattern.compile("cmdstat_mget:calls=(\\d+)");
 
     private Redis redisClient;
     private RedisAPI api;
@@ -176,6 +183,45 @@ class RedisCacheTest {
                         assertThat(values).doesNotContainKey(missing);
                         assertThat(values).hasSize(1);
                     });
+                    ctx.completeNow();
+                }));
+    }
+
+    private Future<Long> mgetCalls() {
+        return api.info(List.of("commandstats"))
+                .map(info -> {
+                    final Matcher matcher = MGET_CALLS.matcher(info.toString(StandardCharsets.UTF_8));
+                    return matcher.find() ? Long.parseLong(matcher.group(1)) : 0L;
+                });
+    }
+
+    /**
+     * Verifies that the values of keys belonging to different hash slots are retrieved
+     * with a single MGET command if the Redis server does not run in cluster mode.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testGetAllUsesSingleCommandIfNotInClusterMode(final VertxTestContext ctx) {
+        final Map<String, String> data = Map.of(
+                randomKey("single-a"), "value-a",
+                randomKey("single-b"), "value-b",
+                randomKey("single-c"), "value-c");
+        final AtomicLong callsBefore = new AtomicLong();
+        cache.putAll(data)
+                // determine cluster mode before counting the MGET commands
+                .compose(ok -> cache.getAll(data.keySet()))
+                .compose(ok -> mgetCalls())
+                .compose(calls -> {
+                    callsBefore.set(calls);
+                    return cache.getAll(data.keySet());
+                })
+                .compose(values -> {
+                    ctx.verify(() -> assertThat(values).containsExactlyEntriesIn(data));
+                    return mgetCalls();
+                })
+                .onComplete(ctx.succeeding(calls -> {
+                    ctx.verify(() -> assertThat(calls - callsBefore.get()).isEqualTo(1L));
                     ctx.completeNow();
                 }));
     }
