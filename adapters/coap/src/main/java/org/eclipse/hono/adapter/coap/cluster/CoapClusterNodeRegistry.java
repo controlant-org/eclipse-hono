@@ -21,30 +21,44 @@ import io.vertx.core.Future;
 
 /**
  * A registry for tracking active CoAP adapter cluster nodes and their internal network addresses.
+ * <p>
+ * A registry instance acts on behalf of the adapter instance that runs in the local process.
+ * Registrations made by other adapter instances are never renewed or removed by it.
  */
 public interface CoapClusterNodeRegistry {
 
     /**
-     * Registers a cluster node with its internal socket address and time-to-live.
+     * Registers the local adapter instance as a cluster node with its internal socket address and time-to-live.
+     * <p>
+     * A registration of the same node ID by a previous incarnation of the local adapter instance,
+     * i.e. by an adapter instance that ran on the same host, is replaced.
      *
      * @param nodeId The unique cluster node ID (0-255).
      * @param internalAddress The internal socket address for cluster communication.
      * @param ttl The time-to-live duration for this registration.
-     * @return A succeeded future if the node was registered successfully, or a failed future on error.
+     * @return A succeeded future if the node was registered successfully.
+     *         A future failed with a {@link ClusterNodeConflictException} if the node ID is registered
+     *         by another adapter instance. A future failed with another exception on error.
      */
     Future<Void> registerNode(int nodeId, InetSocketAddress internalAddress, Duration ttl);
 
     /**
-     * Renews the heartbeat / lease for an already registered cluster node.
+     * Renews the registration of the local adapter instance as a cluster node.
      *
      * @param nodeId The unique cluster node ID.
      * @param ttl The new time-to-live duration.
-     * @return A succeeded future if the heartbeat was renewed, or a failed future if the node is not registered.
+     * @return A succeeded future if the registration was renewed.
+     *         A future failed with a {@link ClusterNodeConflictException} if the node ID is registered
+     *         by another adapter instance. A future failed with another exception if the node is not
+     *         registered or on error.
      */
     Future<Void> heartbeat(int nodeId, Duration ttl);
 
     /**
-     * Unregisters a cluster node.
+     * Removes the registration of the local adapter instance as a cluster node.
+     * <p>
+     * The registration is only removed if it is still the one that has been made by the
+     * local adapter instance.
      *
      * @param nodeId The unique cluster node ID.
      * @return A succeeded future when the unregistration is complete.

@@ -21,6 +21,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.hono.deviceconnection.common.Cache;
@@ -32,6 +35,11 @@ import io.vertx.core.json.JsonObject;
 
 /**
  * A {@link CoapClusterNodeRegistry} implementation backed by a central {@link Cache}.
+ * <p>
+ * Each registration contains the cluster address of the adapter instance that has made it,
+ * the name of the host that the adapter instance runs on and an identifier of the adapter
+ * instance that is unique for the lifetime of the process. This information is used to prevent
+ * an adapter instance from renewing or removing a registration of another adapter instance.
  */
 public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistry {
 
@@ -52,11 +60,22 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     private static final Logger LOG = LoggerFactory.getLogger(CacheBasedCoapClusterNodeRegistry.class);
 
+    private static final String FIELD_IP = "ip";
+    private static final String FIELD_PORT = "port";
+    private static final String FIELD_HOST = "host";
+    private static final String FIELD_INSTANCE = "instance";
+    private static final String FIELD_UPDATED = "updated";
+
     private final Cache<String, String> cache;
     private final Clock clock;
+    private final String instanceId;
+    private final String hostName;
+    private final ConcurrentMap<Integer, String> ownEntries = new ConcurrentHashMap<>();
 
     /**
      * Creates a new registry backed by the given cache using the UTC system clock.
+     * <p>
+     * The local host name is determined by means of {@link ClusterNodeIdentity#localHostName()}.
      *
      * @param cache The cache to store node registrations in.
      * @throws NullPointerException if cache is {@code null}.
@@ -67,42 +86,94 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
 
     /**
      * Creates a new registry backed by the given cache and clock.
+     * <p>
+     * The local host name is determined by means of {@link ClusterNodeIdentity#localHostName()}.
      *
      * @param cache The cache to store node registrations in.
      * @param clock The clock to use for timestamps.
      * @throws NullPointerException if any parameter is {@code null}.
      */
     public CacheBasedCoapClusterNodeRegistry(final Cache<String, String> cache, final Clock clock) {
+        this(cache, clock, UUID.randomUUID().toString(), ClusterNodeIdentity.localHostName().orElse(null));
+    }
+
+    /**
+     * Creates a new registry backed by the given cache and clock.
+     *
+     * @param cache The cache to store node registrations in.
+     * @param clock The clock to use for timestamps.
+     * @param instanceId The identifier of the local adapter instance.
+     * @param hostName The name of the host that the local adapter instance runs on or {@code null} if unknown.
+     * @throws NullPointerException if any parameter other than host name is {@code null}.
+     */
+    public CacheBasedCoapClusterNodeRegistry(
+            final Cache<String, String> cache,
+            final Clock clock,
+            final String instanceId,
+            final String hostName) {
         this.cache = Objects.requireNonNull(cache, "cache must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.instanceId = Objects.requireNonNull(instanceId, "instanceId must not be null");
+        this.hostName = hostName;
     }
 
     @Override
     public Future<Void> registerNode(final int nodeId, final InetSocketAddress internalAddress, final Duration ttl) {
         checkNodeId(nodeId);
         Objects.requireNonNull(internalAddress, "internalAddress must not be null");
-        Objects.requireNonNull(ttl, "ttl must not be null");
-        if (ttl.isNegative() || ttl.isZero()) {
-            throw new IllegalArgumentException("ttl must be positive");
-        }
+        checkTtl(ttl);
 
         final String key = toKey(nodeId);
-        final String value = toJson(internalAddress, clock.millis());
+        final String value = toJson(internalAddress);
 
-        return cache.put(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS)
-                .onSuccess(v -> LOG.debug("Registered cluster node [nodeId: {}, address: {}, ttl: {}ms]",
-                        nodeId, internalAddress, ttl.toMillis()))
-                .onFailure(t -> LOG.warn("Failed to register cluster node [nodeId: {}, address: {}]",
+        return cache.putIfAbsent(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS)
+                .compose(stored -> stored ? Future.succeededFuture() : replaceOwnRegistration(nodeId, value, ttl))
+                .onSuccess(v -> {
+                    ownEntries.put(nodeId, value);
+                    LOG.debug("Registered cluster node [nodeId: {}, address: {}, ttl: {}ms]",
+                            nodeId, internalAddress, ttl.toMillis());
+                })
+                .onFailure(t -> LOG.debug("Failed to register cluster node [nodeId: {}, address: {}]",
                         nodeId, internalAddress, t));
+    }
+
+    private Future<Void> replaceOwnRegistration(final int nodeId, final String value, final Duration ttl) {
+        final String key = toKey(nodeId);
+        return cache.get(key)
+                .compose(existingJson -> {
+                    if (existingJson == null) {
+                        // the existing registration has expired in the meantime
+                        return cache.putIfAbsent(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS)
+                                .compose(stored -> stored
+                                        ? Future.succeededFuture()
+                                        : Future.failedFuture(new ClusterNodeConflictException(nodeId, null, null)));
+                    }
+                    final JsonObject existing;
+                    try {
+                        existing = new JsonObject(existingJson);
+                    } catch (final Exception e) {
+                        LOG.warn("Replacing corrupt cache entry for cluster node [nodeId: {}]", nodeId, e);
+                        return cache.put(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS);
+                    }
+                    if (isOwnRegistration(existing)) {
+                        return cache.put(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS);
+                    }
+                    if (hostName != null && hostName.equals(existing.getString(FIELD_HOST))) {
+                        LOG.info("Replacing registration of previous adapter instance on host {} [nodeId: {}]",
+                                hostName, nodeId);
+                        return cache.put(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS);
+                    }
+                    return Future.failedFuture(new ClusterNodeConflictException(
+                            nodeId,
+                            existing.getString(FIELD_HOST),
+                            parseAddress(existing)));
+                });
     }
 
     @Override
     public Future<Void> heartbeat(final int nodeId, final Duration ttl) {
         checkNodeId(nodeId);
-        Objects.requireNonNull(ttl, "ttl must not be null");
-        if (ttl.isNegative() || ttl.isZero()) {
-            throw new IllegalArgumentException("ttl must be positive");
-        }
+        checkTtl(ttl);
 
         final String key = toKey(nodeId);
         return cache.get(key)
@@ -110,37 +181,44 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
                     if (existingJson == null) {
                         return Future.failedFuture(new IllegalStateException("Node " + nodeId + " is not registered"));
                     }
+                    final JsonObject existing;
                     try {
-                        final JsonObject json = new JsonObject(existingJson);
-                        json.put("updated", clock.millis());
-                        return cache.put(key, json.encode(), ttl.toMillis(), TimeUnit.MILLISECONDS)
-                                .onSuccess(v -> LOG.trace("Renewed heartbeat for cluster node [nodeId: {}, ttl: {}ms]",
-                                        nodeId, ttl.toMillis()));
+                        existing = new JsonObject(existingJson);
                     } catch (final Exception e) {
                         return Future.failedFuture(new IllegalStateException("Corrupt cache entry for node " + nodeId, e));
                     }
+                    if (!isOwnRegistration(existing)) {
+                        return Future.failedFuture(new ClusterNodeConflictException(
+                                nodeId,
+                                existing.getString(FIELD_HOST),
+                                parseAddress(existing)));
+                    }
+                    final String value = toJson(parseAddress(existing));
+                    return cache.put(key, value, ttl.toMillis(), TimeUnit.MILLISECONDS)
+                            .onSuccess(v -> {
+                                ownEntries.put(nodeId, value);
+                                LOG.trace("Renewed heartbeat for cluster node [nodeId: {}, ttl: {}ms]",
+                                        nodeId, ttl.toMillis());
+                            });
                 });
     }
 
     @Override
     public Future<Void> unregisterNode(final int nodeId) {
         checkNodeId(nodeId);
-        final String key = toKey(nodeId);
-        return cache.get(key)
-                .compose(existingJson -> {
-                    if (existingJson != null) {
-                        return cache.remove(key, existingJson)
-                                .onSuccess(removed -> {
-                                    if (removed) {
-                                        LOG.debug("Unregistered cluster node [nodeId: {}]", nodeId);
-                                    } else {
-                                        LOG.debug("Cluster node entry was already changed or removed [nodeId: {}]", nodeId);
-                                    }
-                                })
-                                .mapEmpty();
+        final String ownEntry = ownEntries.remove(nodeId);
+        if (ownEntry == null) {
+            return Future.succeededFuture();
+        }
+        return cache.remove(toKey(nodeId), ownEntry)
+                .onSuccess(removed -> {
+                    if (removed) {
+                        LOG.debug("Unregistered cluster node [nodeId: {}]", nodeId);
+                    } else {
+                        LOG.debug("Cluster node entry was already changed or removed [nodeId: {}]", nodeId);
                     }
-                    return Future.succeededFuture();
-                });
+                })
+                .mapEmpty();
     }
 
     @Override
@@ -214,25 +292,42 @@ public class CacheBasedCoapClusterNodeRegistry implements CoapClusterNodeRegistr
         }
     }
 
-    private static String toJson(final InetSocketAddress address, final long timestamp) {
+    private static void checkTtl(final Duration ttl) {
+        Objects.requireNonNull(ttl, "ttl must not be null");
+        if (ttl.isNegative() || ttl.isZero()) {
+            throw new IllegalArgumentException("ttl must be positive");
+        }
+    }
+
+    private boolean isOwnRegistration(final JsonObject entry) {
+        return instanceId.equals(entry.getString(FIELD_INSTANCE));
+    }
+
+    private String toJson(final InetSocketAddress address) {
         final String ip = address.getAddress() != null
                 ? address.getAddress().getHostAddress()
                 : address.getHostString();
-        return new JsonObject()
-                .put("ip", ip)
-                .put("port", address.getPort())
-                .put("updated", timestamp)
-                .encode();
+        final JsonObject json = new JsonObject()
+                .put(FIELD_IP, ip)
+                .put(FIELD_PORT, address.getPort())
+                .put(FIELD_INSTANCE, instanceId)
+                .put(FIELD_UPDATED, clock.millis());
+        if (hostName != null) {
+            json.put(FIELD_HOST, hostName);
+        }
+        return json.encode();
     }
 
     private static InetSocketAddress parseAddress(final String jsonString) {
-        final JsonObject json = new JsonObject(jsonString);
-        final String ip = json.getString("ip");
-        final Integer port = json.getInteger("port");
+        return parseAddress(new JsonObject(jsonString));
+    }
+
+    private static InetSocketAddress parseAddress(final JsonObject json) {
+        final String ip = json.getString(FIELD_IP);
+        final Integer port = json.getInteger(FIELD_PORT);
         if (ip != null && port != null) {
             return new InetSocketAddress(ip, port);
         }
         return null;
     }
 }
-
