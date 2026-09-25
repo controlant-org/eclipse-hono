@@ -18,6 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 
 import java.lang.reflect.Field;
 import java.net.DatagramPacket;
@@ -59,6 +62,7 @@ import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
 import org.eclipse.hono.adapter.coap.cluster.InMemoryTestCache;
 import org.eclipse.hono.adapter.coap.cluster.MacProtectedDtlsClusterConnector;
+import org.eclipse.hono.adapter.coap.cluster.MetricsReportingDtlsClusterHealth;
 import org.eclipse.hono.adapter.coap.cluster.TestClock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,6 +84,8 @@ public class CoapClusterIntegrationTest {
     private CacheBasedCoapClusterNodeRegistry registry;
     private CacheBasedClusterNodesProvider provider0;
     private CacheBasedClusterNodesProvider provider1;
+    private CoapAdapterMetrics metrics0;
+    private CoapAdapterMetrics metrics1;
 
     private CoapServer server0;
     private CoapServer server1;
@@ -99,6 +105,8 @@ public class CoapClusterIntegrationTest {
         registry = new CacheBasedCoapClusterNodeRegistry(sharedCache, clock);
         provider0 = new CacheBasedClusterNodesProvider(registry);
         provider1 = new CacheBasedClusterNodesProvider(registry);
+        metrics0 = mock(CoapAdapterMetrics.class);
+        metrics1 = mock(CoapAdapterMetrics.class);
     }
 
     /**
@@ -165,7 +173,8 @@ public class CoapClusterIntegrationTest {
                 .setAddress(new InetSocketAddress("127.0.0.1", 0))
                 .setAdvancedPskStore(new AdvancedSinglePskStore(PSK_IDENTITY, PSK_KEY))
                 .setConnectionIdGenerator(new MultiNodeConnectionIdGenerator(nodeId, CID_LENGTH))
-                .set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, CID_LENGTH);
+                .set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, CID_LENGTH)
+                .setHealthHandler(new MetricsReportingDtlsClusterHealth("node-" + nodeId, nodeId == 0 ? metrics0 : metrics1));
 
         final DtlsClusterConnectorConfig.Builder clusterConfigBuilder = DtlsClusterConnectorConfig.builder();
         clusterConfigBuilder.setAddress(new InetSocketAddress("127.0.0.1", 0));
@@ -263,6 +272,12 @@ public class CoapClusterIntegrationTest {
         final CoapResponse response2 = client.post("rebound-payload", MediaTypeRegistry.TEXT_PLAIN);
         assertNotNull(response2, "Rebound CoAP response forwarded through Node 1 to Node 0 should not be null");
         assertEquals(ResponseCode.CHANGED, response2.getCode());
+
+        // the request has been forwarded from node 1 to node 0 and the response has been sent back via node 1
+        verify(metrics1).reportClusterRecordForwarded(CoapAdapterMetrics.TAG_VALUE_OUTBOUND);
+        verify(metrics0).reportClusterRecordForwarded(CoapAdapterMetrics.TAG_VALUE_INBOUND);
+        verify(metrics0).reportClusterRecordBackwarded(CoapAdapterMetrics.TAG_VALUE_OUTBOUND);
+        verify(metrics1).reportClusterRecordBackwarded(CoapAdapterMetrics.TAG_VALUE_INBOUND);
     }
 
     /**
@@ -326,6 +341,8 @@ public class CoapClusterIntegrationTest {
                     forgeBackwardRecord(victimAddress, 8, payload),
                     connector1.getClusterInternalAddress(),
                     victim));
+            verify(metrics1).reportClusterRecordDropped(
+                    CoapAdapterMetrics.TAG_VALUE_BACKWARD, CoapAdapterMetrics.DROP_REASON_MAC_INVALID);
         }
     }
 
@@ -376,6 +393,8 @@ public class CoapClusterIntegrationTest {
         client.setURI("coaps://127.0.0.1:" + node1PublicAddr.getPort() + "/telemetry");
 
         assertNull(client.post("rebound-payload", MediaTypeRegistry.TEXT_PLAIN));
+        verify(metrics0, timeout(1000).atLeastOnce()).reportClusterRecordDropped(
+                CoapAdapterMetrics.TAG_VALUE_FORWARD, CoapAdapterMetrics.DROP_REASON_MAC_INVALID);
     }
 
     /**

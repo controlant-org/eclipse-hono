@@ -41,44 +41,42 @@ public class MicrometerBasedCoapAdapterMetricsTest {
         metrics = new MicrometerBasedCoapAdapterMetrics(registry, vertx, config);
     }
 
+    /**
+     * Verifies that forwarded records are counted per direction.
+     */
     @Test
-    void testCidReceivedMetric() {
-        metrics.incrementCidReceived();
-        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CID_RECEIVED).counter().count());
-    }
+    void testClusterRecordForwardedMetric() {
+        metrics.reportClusterRecordForwarded(CoapAdapterMetrics.TAG_VALUE_OUTBOUND);
+        metrics.reportClusterRecordForwarded(CoapAdapterMetrics.TAG_VALUE_OUTBOUND);
+        metrics.reportClusterRecordForwarded(CoapAdapterMetrics.TAG_VALUE_INBOUND);
 
-    @Test
-    void testClusterForwardedMetrics() {
-        metrics.incrementClusterForwardedOutbound();
-        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARDED)
+        assertEquals(2.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARDED)
                 .tag(CoapAdapterMetrics.TAG_DIRECTION, CoapAdapterMetrics.TAG_VALUE_OUTBOUND).counter().count());
-
-        metrics.incrementClusterForwardedInbound();
         assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARDED)
                 .tag(CoapAdapterMetrics.TAG_DIRECTION, CoapAdapterMetrics.TAG_VALUE_INBOUND).counter().count());
     }
 
+    /**
+     * Verifies that backwarded records are counted per direction.
+     */
     @Test
-    void testClusterForwardDroppedMetric() {
-        metrics.incrementClusterForwardDropped(CoapAdapterMetrics.DROP_REASON_NODE_OFFLINE);
-        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED)
-                .tag(CoapAdapterMetrics.TAG_REASON, CoapAdapterMetrics.DROP_REASON_NODE_OFFLINE).counter().count());
+    void testClusterRecordBackwardedMetric() {
+        metrics.reportClusterRecordBackwarded(CoapAdapterMetrics.TAG_VALUE_INBOUND);
+
+        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_BACKWARDED)
+                .tag(CoapAdapterMetrics.TAG_DIRECTION, CoapAdapterMetrics.TAG_VALUE_INBOUND).counter().count());
     }
 
+    /**
+     * Verifies that dropped records are counted per path and reason.
+     */
     @Test
-    void testClusterForwardDroppedNullReasonFallback() {
-        metrics.incrementClusterForwardDropped(null);
-        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED)
-                .tag(CoapAdapterMetrics.TAG_REASON, CoapAdapterMetrics.DROP_REASON_UNKNOWN).counter().count());
-    }
+    void testClusterRecordDroppedMetric() {
+        metrics.reportClusterRecordDropped(CoapAdapterMetrics.TAG_VALUE_FORWARD, CoapAdapterMetrics.DROP_REASON_MAC_INVALID);
 
-    @Test
-    void testNoopMetrics() {
-        // Ensure NOOP instance methods execute without errors
-        CoapAdapterMetrics.NOOP.incrementCidReceived();
-        CoapAdapterMetrics.NOOP.incrementClusterForwardedOutbound();
-        CoapAdapterMetrics.NOOP.incrementClusterForwardedInbound();
-        CoapAdapterMetrics.NOOP.incrementClusterForwardDropped(CoapAdapterMetrics.DROP_REASON_NODE_OFFLINE);
+        assertEquals(1.0, registry.get(CoapAdapterMetrics.METER_COAP_DTLS_CLUSTER_DROPPED)
+                .tag(CoapAdapterMetrics.TAG_PATH, CoapAdapterMetrics.TAG_VALUE_FORWARD)
+                .tag(CoapAdapterMetrics.TAG_REASON, CoapAdapterMetrics.DROP_REASON_MAC_INVALID)
+                .counter().count());
     }
 }
-

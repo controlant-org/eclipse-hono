@@ -46,10 +46,12 @@ import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore;
 import org.eclipse.californium.scandium.dtls.x509.NewAdvancedCertificateVerifier;
 import org.eclipse.californium.scandium.dtls.x509.SingleCertificateProvider;
+import org.eclipse.hono.adapter.coap.CoapAdapterMetrics;
 import org.eclipse.hono.adapter.coap.CoapAdapterProperties;
 import org.eclipse.hono.adapter.coap.CoapEndpointFactory;
 import org.eclipse.hono.adapter.coap.DeviceInfoSupplier;
 import org.eclipse.hono.adapter.coap.cluster.MacProtectedDtlsClusterConnector;
+import org.eclipse.hono.adapter.coap.cluster.MetricsReportingDtlsClusterHealth;
 import org.eclipse.hono.adapter.coap.option.TimeOption;
 import org.eclipse.hono.adapter.limiting.MemoryBasedConnectionLimitStrategy;
 import org.eclipse.hono.config.KeyLoader;
@@ -98,6 +100,7 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
     private NewAdvancedCertificateVerifier certificateVerifier;
     private ApplicationLevelInfoSupplier deviceResolver = new DeviceInfoSupplier();
     private ObservationStore observationStore;
+    private CoapAdapterMetrics metrics = CoapAdapterMetrics.NOOP;
     private DtlsClusterConnector.ClusterNodesProvider clusterNodesProvider;
 
     /**
@@ -167,6 +170,18 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
      */
     public void setObservationStore(final ObservationStore store) {
         this.observationStore = Objects.requireNonNull(store);
+    }
+
+    /**
+     * Sets the metrics to report the DTLS records exchanged with other cluster nodes to.
+     * <p>
+     * If not set, the records are not reported.
+     *
+     * @param metrics The metrics.
+     * @throws NullPointerException if metrics is {@code null}.
+     */
+    public void setMetrics(final CoapAdapterMetrics metrics) {
+        this.metrics = Objects.requireNonNull(metrics);
     }
 
     /**
@@ -398,6 +413,7 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
                         config.getCidNodeId(), config.getCidLength());
                 dtlsConfig.setConnectionIdGenerator(cidGen);
                 dtlsConfig.set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, config.getCidLength());
+                dtlsConfig.setHealthHandler(new MetricsReportingDtlsClusterHealth("coaps", metrics));
                 final DtlsConnectorConfig dtlsConnectorConfig = dtlsConfig.build();
                 logCiphers(dtlsConnectorConfig);
                 final DtlsClusterConnectorConfig clusterConfig = DtlsClusterConnectorConfig.builder()

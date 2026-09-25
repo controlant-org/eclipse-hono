@@ -143,6 +143,7 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
                 new CommandResponseResource(CommandConstants.COMMAND_RESPONSE_ENDPOINT_SHORT, adapter, tracer, vertx)));
 
         final var endpointFactory = new ConfigBasedCoapEndpointFactory(vertx, protocolAdapterProperties);
+        endpointFactory.setMetrics(metrics);
         endpointFactory.setPskStore(new DeviceRegistryBasedPskStore(adapter, tracer));
         endpointFactory.setCertificateVerifier(new DeviceRegistryBasedCertificateVerifier(vertx, adapter, tracer));
 

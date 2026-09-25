@@ -34,6 +34,7 @@ import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore;
 import org.eclipse.hono.adapter.coap.CoapAdapterProperties;
 import org.eclipse.hono.adapter.coap.cluster.MacProtectedDtlsClusterConnector;
+import org.eclipse.hono.adapter.coap.cluster.MetricsReportingDtlsClusterHealth;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -191,6 +192,7 @@ public class ConfigBasedCoapEndpointFactoryTest {
 
                 final DtlsConnectorConfig dtlsConfig = getDtlsConnectorConfig(clusterConnector);
                 assertEquals(6, dtlsConfig.getConfiguration().get(DtlsConfig.DTLS_CONNECTION_ID_LENGTH));
+                assertInstanceOf(MetricsReportingDtlsClusterHealth.class, dtlsConfig.getHealthHandler());
             });
             ctx.completeNow();
         }));

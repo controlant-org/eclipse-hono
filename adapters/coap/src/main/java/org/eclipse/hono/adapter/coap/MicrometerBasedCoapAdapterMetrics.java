@@ -25,10 +25,6 @@ import io.vertx.core.Vertx;
  */
 public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAdapterMetrics implements CoapAdapterMetrics {
 
-    private final Counter cidReceivedCounter;
-    private final Counter clusterForwardedOutboundCounter;
-    private final Counter clusterForwardedInboundCounter;
-
     /**
      * Create a new metrics instance for COAP adapters.
      *
@@ -42,42 +38,33 @@ public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAd
             final Vertx vertx,
             final ProtocolAdapterProperties config) {
         super(registry, vertx, config);
-
-        this.cidReceivedCounter = Counter.builder(METER_COAP_DTLS_CID_RECEIVED)
-                .description("Number of received DTLS packets containing a Connection ID")
-                .register(registry);
-        this.clusterForwardedOutboundCounter = Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARDED)
-                .description("Number of datagrams forwarded to another cluster node")
-                .tag(TAG_DIRECTION, TAG_VALUE_OUTBOUND)
-                .register(registry);
-        this.clusterForwardedInboundCounter = Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARDED)
-                .description("Number of datagrams received from another cluster node")
-                .tag(TAG_DIRECTION, TAG_VALUE_INBOUND)
-                .register(registry);
     }
 
     @Override
-    public void incrementCidReceived() {
-        this.cidReceivedCounter.increment();
+    public void reportClusterRecordForwarded(final String direction) {
+        Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARDED)
+                .description("DTLS records forwarded to or from the cluster node owning the connection ID")
+                .tag(TAG_DIRECTION, direction)
+                .register(registry)
+                .increment();
     }
 
     @Override
-    public void incrementClusterForwardedOutbound() {
-        this.clusterForwardedOutboundCounter.increment();
+    public void reportClusterRecordBackwarded(final String direction) {
+        Counter.builder(METER_COAP_DTLS_CLUSTER_BACKWARDED)
+                .description("DTLS records sent back via the cluster node that has received the device's records")
+                .tag(TAG_DIRECTION, direction)
+                .register(registry)
+                .increment();
     }
 
     @Override
-    public void incrementClusterForwardedInbound() {
-        this.clusterForwardedInboundCounter.increment();
-    }
-
-    @Override
-    public void incrementClusterForwardDropped(final String reason) {
-        Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARD_DROPPED)
-                .description("Number of cluster forward datagrams dropped")
-                .tag(TAG_REASON, reason != null ? reason : DROP_REASON_UNKNOWN)
-                .register(this.registry)
+    public void reportClusterRecordDropped(final String path, final String reason) {
+        Counter.builder(METER_COAP_DTLS_CLUSTER_DROPPED)
+                .description("DTLS records that could not be exchanged with another cluster node")
+                .tag(TAG_PATH, path)
+                .tag(TAG_REASON, reason)
+                .register(registry)
                 .increment();
     }
 }
-
