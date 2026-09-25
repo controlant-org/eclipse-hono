@@ -79,6 +79,7 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     private CoapAdapterMetrics metrics;
     private CoapServer server;
     private Handler<Void> startupHandler;
+    private Runnable preShutdownAction;
 
     /**
      * Sets up common fixture.
@@ -281,24 +282,7 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
         }));
     }
 
-    /**
-     * Verifies that when cluster mode is enabled, the adapter registers the node in the cluster
-     * registry and starts heartbeats during startup, and cancels timers and unregisters the node during shutdown.
-     *
-     * @param ctx The helper to use for running async tests on vertx.
-     */
-    @Test
-    public void testClusterLifecycle(final VertxTestContext ctx) {
-
-        properties.setClusterEnabled(true);
-        properties.setCidNodeId(42);
-        properties.setClusterBindAddress("10.0.0.1");
-        properties.setClusterPort(5685);
-        properties.setClusterHeartbeat(Duration.ofMillis(50));
-        properties.setClusterNodeTtl(Duration.ofSeconds(30));
-
-        givenAnAdapter(properties);
-
+    private CoapClusterNodeRegistry givenAClusterNodeRegistry() {
         final CoapClusterNodeRegistry registry = mock(CoapClusterNodeRegistry.class);
         when(registry.registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class)))
                 .thenReturn(Future.succeededFuture());
@@ -306,10 +290,38 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
                 .thenReturn(Future.succeededFuture());
         when(registry.unregisterNode(anyInt()))
                 .thenReturn(Future.succeededFuture());
+        return registry;
+    }
 
+    private CacheBasedClusterNodesProvider givenAClusterNodesProvider() {
         final CacheBasedClusterNodesProvider provider = mock(CacheBasedClusterNodesProvider.class);
         when(provider.refresh()).thenReturn(Future.succeededFuture());
+        return provider;
+    }
 
+    private void givenClusterModeProperties() {
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(42);
+        properties.setClusterBindAddress("10.0.0.1");
+        properties.setClusterPort(5685);
+        properties.setClusterHeartbeat(Duration.ofMillis(50));
+        properties.setClusterNodeTtl(Duration.ofSeconds(30));
+    }
+
+    /**
+     * Verifies that when cluster mode is enabled, the adapter registers the node in the cluster
+     * registry and periodically renews the registration and refreshes the cluster nodes during startup,
+     * and stops renewing and unregisters the node during shutdown.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterLifecycle(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        givenAnAdapter(properties);
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        final CacheBasedClusterNodesProvider provider = givenAClusterNodesProvider();
         adapter.setClusterNodeRegistry(registry);
         adapter.setClusterNodesProvider(provider);
 
@@ -321,8 +333,7 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
                     ctx.verify(() -> {
                         verify(registry).registerNode(eq(42), eq(new InetSocketAddress("10.0.0.1", 5685)), eq(Duration.ofSeconds(30)));
                         verify(provider).refresh();
-                        assertThat(adapter.getHeartbeatTimerId()).isNotNull();
-                        assertThat(adapter.getClusterRefreshTimerId()).isNotNull();
+                        assertThat(adapter.getClusterMembership().isJoined()).isTrue();
                     });
 
                     final Promise<Void> heartbeatPromise = Promise.promise();
@@ -343,8 +354,8 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
                 .onComplete(ctx.succeeding(v -> {
                     ctx.verify(() -> {
                         verify(registry).unregisterNode(eq(42));
-                        assertThat(adapter.getHeartbeatTimerId()).isNull();
-                        assertThat(adapter.getClusterRefreshTimerId()).isNull();
+                        verify(server).stop();
+                        assertThat(adapter.getClusterMembership().isJoined()).isFalse();
                     });
                     ctx.completeNow();
                 }));
@@ -358,24 +369,13 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     @Test
     public void testHeartbeatFailureTriggersReRegistration(final VertxTestContext ctx) {
 
-        properties.setClusterEnabled(true);
-        properties.setCidNodeId(42);
-        properties.setClusterBindAddress("10.0.0.1");
-        properties.setClusterPort(5685);
-        properties.setClusterHeartbeat(Duration.ofMillis(50));
-        properties.setClusterNodeTtl(Duration.ofSeconds(30));
-
+        givenClusterModeProperties();
         givenAnAdapter(properties);
-
-        final CoapClusterNodeRegistry registry = mock(CoapClusterNodeRegistry.class);
-        when(registry.registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class)))
-                .thenReturn(Future.succeededFuture());
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
         when(registry.heartbeat(anyInt(), any(Duration.class)))
                 .thenReturn(Future.failedFuture(new IllegalStateException("lease expired")));
-        when(registry.unregisterNode(anyInt()))
-                .thenReturn(Future.succeededFuture());
-
         adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
 
         final Promise<Void> startPromise = Promise.promise();
         adapter.start(startPromise);
@@ -416,6 +416,7 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
         properties.setClusterEnabled(true);
         properties.setCidNodeId(1);
         givenAnAdapter(properties);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
 
         final Promise<Void> startupTracker = Promise.promise();
         adapter.start(startupTracker);
@@ -424,6 +425,33 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
             ctx.verify(() -> {
                 assertThat(t).isInstanceOf(IllegalStateException.class);
                 assertThat(t.getMessage()).contains("clusterNodeRegistry property must be set");
+                verify(server, never()).start();
+            });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
+     * Verifies that startup fails when cluster mode is enabled but no cluster nodes provider is set.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterStartupFailsWhenNodesProviderNotSet(final VertxTestContext ctx) {
+
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(1);
+        givenAnAdapter(properties);
+        adapter.setClusterNodeRegistry(givenAClusterNodeRegistry());
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future().onComplete(ctx.failing(t -> {
+            ctx.verify(() -> {
+                assertThat(t).isInstanceOf(IllegalStateException.class);
+                assertThat(t.getMessage()).contains("clusterNodesProvider property must be set");
+                verify(server, never()).start();
             });
             ctx.completeNow();
         }));
@@ -440,7 +468,8 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
         properties.setClusterEnabled(true);
         properties.setCidNodeId(-1);
         givenAnAdapter(properties);
-        adapter.setClusterNodeRegistry(mock(CoapClusterNodeRegistry.class));
+        adapter.setClusterNodeRegistry(givenAClusterNodeRegistry());
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
 
         final Promise<Void> startupTracker = Promise.promise();
         adapter.start(startupTracker);
@@ -449,6 +478,35 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
             ctx.verify(() -> {
                 assertThat(t).isInstanceOf(IllegalStateException.class);
                 assertThat(t.getMessage()).contains("cidNodeId must be configured");
+                verify(server, never()).start();
+            });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
+     * Verifies that the adapter leaves the cluster again if the CoAP server cannot be started.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterIsLeftWhenServerStartFails(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        this.server = getCoapServer(true);
+        this.adapter = getAdapter(server, properties, true, startupHandler);
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future().onComplete(ctx.failing(t -> {
+            ctx.verify(() -> {
+                verify(registry).registerNode(eq(42), any(InetSocketAddress.class), any(Duration.class));
+                verify(registry).unregisterNode(eq(42));
+                assertThat(adapter.getClusterMembership().isJoined()).isFalse();
             });
             ctx.completeNow();
         }));
@@ -462,17 +520,13 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     @Test
     public void testClusterShutdownSucceedsWhenUnregisterFails(final VertxTestContext ctx) {
 
-        properties.setClusterEnabled(true);
-        properties.setCidNodeId(42);
+        givenClusterModeProperties();
         givenAnAdapter(properties);
-
-        final CoapClusterNodeRegistry registry = mock(CoapClusterNodeRegistry.class);
-        when(registry.registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class)))
-                .thenReturn(Future.succeededFuture());
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
         when(registry.unregisterNode(anyInt()))
                 .thenReturn(Future.failedFuture(new RuntimeException("intended unregister failure")));
-
         adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
 
         final Promise<Void> startPromise = Promise.promise();
         adapter.start(startPromise);
@@ -483,7 +537,45 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
                     adapter.stop(stopPromise);
                     return stopPromise.future();
                 })
-                .onComplete(ctx.succeedingThenComplete());
+                .onComplete(ctx.succeeding(v -> {
+                    ctx.verify(() -> verify(server).stop());
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that the CoAP server is stopped even if the <em>preShutdown</em> method throws an exception.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testStopStopsServerWhenPreShutdownFails(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        preShutdownAction = () -> {
+            throw new IllegalStateException("intended preShutdown failure");
+        };
+        givenAnAdapter(properties);
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
+
+        final Promise<Void> startPromise = Promise.promise();
+        adapter.start(startPromise);
+
+        startPromise.future()
+                .compose(v -> {
+                    final Promise<Void> stopPromise = Promise.promise();
+                    adapter.stop(stopPromise);
+                    return stopPromise.future();
+                })
+                .onComplete(ctx.succeeding(v -> {
+                    ctx.verify(() -> {
+                        verify(registry).unregisterNode(eq(42));
+                        verify(server).stop();
+                    });
+                    ctx.completeNow();
+                }));
     }
 
     private CoapServer getCoapServer(final boolean startupShouldFail) {
@@ -547,6 +639,11 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
             @Override
             protected void onStartupSuccess() {
                 Optional.ofNullable(onStartupSuccess).ifPresent(h -> h.handle(null));
+            }
+
+            @Override
+            protected void preShutdown() {
+                Optional.ofNullable(preShutdownAction).ifPresent(Runnable::run);
             }
         };
 
