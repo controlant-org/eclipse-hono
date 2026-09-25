@@ -138,11 +138,13 @@ public class CoapAdapterPropertiesTest {
 
         // Non-positive durations
         assertThrows(IllegalArgumentException.class, () -> props.setClusterHeartbeat(Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> props.setClusterHeartbeat(Duration.ofNanos(500_000)));
         assertThrows(IllegalArgumentException.class, () -> props.setClusterHeartbeat(Duration.ofSeconds(-1)));
         assertThrows(IllegalArgumentException.class, () -> props.setClusterHeartbeat(0));
         assertThrows(IllegalArgumentException.class, () -> props.setClusterHeartbeat(-100));
 
         assertThrows(IllegalArgumentException.class, () -> props.setClusterNodeTtl(Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> props.setClusterNodeTtl(Duration.ofNanos(500_000)));
         assertThrows(IllegalArgumentException.class, () -> props.setClusterNodeTtl(Duration.ofSeconds(-1)));
         assertThrows(IllegalArgumentException.class, () -> props.setClusterNodeTtl(0));
         assertThrows(IllegalArgumentException.class, () -> props.setClusterNodeTtl(-100));

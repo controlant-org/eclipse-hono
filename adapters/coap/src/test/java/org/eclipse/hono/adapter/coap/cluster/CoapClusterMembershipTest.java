@@ -13,6 +13,7 @@
 
 package org.eclipse.hono.adapter.coap.cluster;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.atLeastOnce;
@@ -77,6 +78,18 @@ public class CoapClusterMembershipTest {
             final Duration leaveTimeout) {
         return new CoapClusterMembership(
                 vertx, registry, provider, NODE_ID, ADDRESS_A, nodeTtl, HEARTBEAT, leaveTimeout);
+    }
+
+    /**
+     * Verifies that a membership cannot be created with a heartbeat interval that is not shorter
+     * than the node TTL.
+     *
+     * @param vertx The Vert.x instance.
+     */
+    @Test
+    void testConstructorRejectsHeartbeatNotShorterThanNodeTtl(final Vertx vertx) {
+        assertThrows(IllegalArgumentException.class, () -> newMembership(
+                vertx, registryA, HEARTBEAT, CoapClusterMembership.DEFAULT_LEAVE_TIMEOUT));
     }
 
     /**

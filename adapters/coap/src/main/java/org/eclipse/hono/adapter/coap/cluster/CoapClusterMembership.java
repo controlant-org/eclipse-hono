@@ -68,6 +68,8 @@ public final class CoapClusterMembership {
      * @param heartbeatInterval The interval at which the registration is renewed.
      * @param leaveTimeout The maximum time to wait for the registration to be removed when leaving.
      * @throws NullPointerException if any of the parameters is {@code null}.
+     * @throws IllegalArgumentException if the heartbeat interval is shorter than one millisecond or
+     *                                  not shorter than the node TTL.
      */
     public CoapClusterMembership(
             final Vertx vertx,
@@ -86,6 +88,12 @@ public final class CoapClusterMembership {
         this.nodeTtl = Objects.requireNonNull(nodeTtl);
         this.heartbeatInterval = Objects.requireNonNull(heartbeatInterval);
         this.leaveTimeout = Objects.requireNonNull(leaveTimeout);
+        if (heartbeatInterval.toMillis() < 1) {
+            throw new IllegalArgumentException("heartbeat interval must be at least one millisecond");
+        }
+        if (heartbeatInterval.compareTo(nodeTtl) >= 0) {
+            throw new IllegalArgumentException("heartbeat interval must be shorter than the node TTL");
+        }
     }
 
     /**

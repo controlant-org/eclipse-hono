@@ -727,15 +727,17 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
 
     /**
      * Sets the interval between cluster node heartbeat registrations.
+     * <p>
+     * The interval must be shorter than the {@linkplain #getClusterNodeTtl() node TTL}.
      *
      * @param clusterHeartbeat The heartbeat interval.
      * @throws NullPointerException if clusterHeartbeat is {@code null}.
-     * @throws IllegalArgumentException if clusterHeartbeat is not positive.
+     * @throws IllegalArgumentException if clusterHeartbeat is shorter than one millisecond.
      */
     public final void setClusterHeartbeat(final Duration clusterHeartbeat) {
         Objects.requireNonNull(clusterHeartbeat);
-        if (clusterHeartbeat.isNegative() || clusterHeartbeat.isZero()) {
-            throw new IllegalArgumentException("cluster heartbeat must be positive");
+        if (clusterHeartbeat.toMillis() < 1) {
+            throw new IllegalArgumentException("cluster heartbeat must be at least one millisecond");
         }
         this.clusterHeartbeat = clusterHeartbeat;
     }
@@ -769,12 +771,12 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
      *
      * @param clusterNodeTtl The node TTL.
      * @throws NullPointerException if clusterNodeTtl is {@code null}.
-     * @throws IllegalArgumentException if clusterNodeTtl is not positive.
+     * @throws IllegalArgumentException if clusterNodeTtl is shorter than one millisecond.
      */
     public final void setClusterNodeTtl(final Duration clusterNodeTtl) {
         Objects.requireNonNull(clusterNodeTtl);
-        if (clusterNodeTtl.isNegative() || clusterNodeTtl.isZero()) {
-            throw new IllegalArgumentException("cluster node TTL must be positive");
+        if (clusterNodeTtl.toMillis() < 1) {
+            throw new IllegalArgumentException("cluster node TTL must be at least one millisecond");
         }
         this.clusterNodeTtl = clusterNodeTtl;
     }

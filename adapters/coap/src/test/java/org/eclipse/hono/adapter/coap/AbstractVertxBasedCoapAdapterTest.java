@@ -547,6 +547,35 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     }
 
     /**
+     * Verifies that startup fails if the heartbeat interval is not shorter than the node TTL.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterStartupFailsForHeartbeatNotShorterThanNodeTtl(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        properties.setClusterHeartbeat(Duration.ofSeconds(30));
+        properties.setClusterNodeTtl(Duration.ofSeconds(30));
+        givenAnAdapter(properties);
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future().onComplete(ctx.failing(t -> {
+            ctx.verify(() -> {
+                assertThat(t).isInstanceOf(IllegalStateException.class);
+                assertThat(t.getMessage()).contains("must be shorter than the cluster node TTL");
+                verify(registry, never()).registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class));
+            });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
      * Verifies that the adapter leaves the cluster again if the CoAP server cannot be started.
      *
      * @param ctx The helper to use for running async tests on vertx.

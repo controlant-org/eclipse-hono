@@ -322,6 +322,17 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
             return Future.failedFuture(
                     new IllegalStateException("cidNodeId must be configured when cluster mode is enabled"));
         }
+        if (config.getClusterHeartbeat().compareTo(config.getClusterNodeTtl()) >= 0) {
+            return Future.failedFuture(new IllegalStateException(String.format(
+                    "cluster heartbeat interval (%s) must be shorter than the cluster node TTL (%s)",
+                    config.getClusterHeartbeat(), config.getClusterNodeTtl())));
+        }
+        if (config.getClusterHeartbeat().multipliedBy(2).compareTo(config.getClusterNodeTtl()) > 0) {
+            log.warn("""
+                    cluster node registration may expire before it is renewed, cluster heartbeat interval ({}) \
+                    should not exceed half of the cluster node TTL ({})\
+                    """, config.getClusterHeartbeat(), config.getClusterNodeTtl());
+        }
         return resolveClusterAddress()
                 .compose(address -> {
                     clusterMembership = new CoapClusterMembership(
