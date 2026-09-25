@@ -23,7 +23,8 @@ configuring the CoAP adapter.
 
 | OS Environment Variable<br>Java System Property | Mandatory | Default | Description |
 | :---------------------------------------------- | :-------: | :------ | :---------- |
-| `HONO_APP_MAXINSTANCES`<br>`hono.app.maxInstances` | no | *#CPU cores* | The number of verticle instances to deploy. If not set, one verticle per processor core is deployed. |
+| `HONO_APP_MAXINSTANCES`<br>`hono.app.maxInstances` | no | *#CPU cores* | The number of verticle instances to deploy. If not set, one verticle per processor core is deployed. In [cluster mode]({{< relref "#cluster-mode" >}}), a single verticle instance is deployed regardless of this setting. |
+| `HONO_CACHE_REDIS_HOSTS`<br>`hono.cache.redis.hosts` | no | - | A comma separated list of URIs of the Redis server(s) that cluster nodes use for sharing their registrations, e.g. `redis://redis:6379`. Mandatory in [cluster mode]({{< relref "#cluster-mode" >}}), which also describes the other Redis client options. |
 | `HONO_COAP_AUTHENTICATIONREQUIRED`<br>`hono.coap.authenticationRequired` | no | `true` | If set to `true` the protocol adapter requires devices to authenticate when connecting to the adapter. The credentials provided by the device are verified using the configured [Credentials Service]({{< relref "/admin-guide/common-config#credentials-service-connection-configuration" >}}). Devices that fail to authenticate are not allowed to connect to the adapter. |
 | `HONO_COAP_BINDADDRESS`<br>`hono.coap.bindAddress` | no | `127.0.0.1` | The IP address of the network interface that the secure port should be bound to.<br>See [Port Configuration]({{< relref "#port-configuration" >}}) below for details. |
 | `HONO_COAP_BLOCKWISESTATUSLIFETIME`<br>`hono.coap.blockwiseStatusLifetime` | no | 300000 | The blockwise status lifetime in milliseconds. If no new blockwise request is received within that lifetime, blockwise status will be removed and the related resources are freed. |
@@ -32,6 +33,16 @@ configuring the CoAP adapter.
 | `HONO_COAP_CONNECTORTHREADS`<br>`hono.coap.connectorThreads` | no | 2 | The number of threads to use for receiving/sending UDP packets. The connector will start the given number of threads for each direction, outbound (sending) as well as inbound (receiving). |
 | `HONO_COAP_DTLSTHREADS`<br>`hono.coap.dtlsThreads` | no | 32 | The number of threads to use for processing DTLS message exchanges at the connection layer. |
 | `HONO_COAP_DTLSRETRANSMISSIONTIMEOUT`<br>`hono.coap.dtlsRetransmissionTimeout` | no | 2000 | The timeout in milliseconds for DTLS retransmissions. |
+| `HONO_COAP_DTLS_CID_ENABLED`<br>`hono.coap.dtls.cid.enabled` | no | `false` | If set to `true`, the adapter supports DTLS 1.2 Connection IDs as defined by [RFC 9146](https://www.rfc-editor.org/rfc/rfc9146). A device that has negotiated a connection ID keeps its DTLS connection when its address changes, e.g. after a NAT rebinding, instead of having to perform a new handshake. Connection IDs are always used in [cluster mode]({{< relref "#cluster-mode" >}}). |
+| `HONO_COAP_DTLS_CID_LENGTH`<br>`hono.coap.dtls.cid.length` | no | `6` | The length of the connection IDs that the adapter issues, in bytes. The length must be between 1 and 255, and at least 5 in cluster mode. |
+| `HONO_COAP_DTLS_CID_NODE_ID`<br>`hono.coap.dtls.cid.node-id` | no | - | The cluster node ID (0 to 255) that the adapter includes in the connection IDs it issues. Only used in [cluster mode]({{< relref "#cluster-mode" >}}). If not set, the ordinal index of the Kubernetes StatefulSet pod that the adapter runs in is used. |
+| `HONO_COAP_DTLS_CLUSTER_ADVERTISED_ADDRESS`<br>`hono.coap.dtls.cluster.advertised-address` | no | - | The IP address or host name that other cluster nodes use for reaching the adapter's cluster port, usually the IP address of the pod. Mandatory in cluster mode if the cluster port is bound to a wildcard address. If not set, the bind address of the cluster port is used. |
+| `HONO_COAP_DTLS_CLUSTER_BIND_ADDRESS`<br>`hono.coap.dtls.cluster.bind-address` | no | `0.0.0.0` | The IP address of the network interface that the cluster port should be bound to. |
+| `HONO_COAP_DTLS_CLUSTER_ENABLED`<br>`hono.coap.dtls.cluster.enabled` | no | `false` | If set to `true`, the adapter runs in [cluster mode]({{< relref "#cluster-mode" >}}) and forwards DTLS records to the adapter instance that has issued the connection ID contained in the record. |
+| `HONO_COAP_DTLS_CLUSTER_HEARTBEAT`<br>`hono.coap.dtls.cluster.heartbeat` | no | `PT10S` | The interval at which the adapter renews its cluster node registration and refreshes its view of the other cluster nodes. The interval must be shorter than `HONO_COAP_DTLS_CLUSTER_NODE_TTL` and should not exceed half of it. See `HONO_COAP_TENANTIDLETIMEOUT` for a description of the format. |
+| `HONO_COAP_DTLS_CLUSTER_MAC_SECRET`<br>`hono.coap.dtls.cluster.mac-secret` | no | - | The secret that all cluster nodes share for authenticating the DTLS records that they exchange with each other. The secret must be at least 16 bytes long, a random value of at least 32 characters is recommended. Mandatory in cluster mode. |
+| `HONO_COAP_DTLS_CLUSTER_NODE_TTL`<br>`hono.coap.dtls.cluster.node-ttl` | no | `PT30S` | The time after which a cluster node registration expires if it is not renewed. See `HONO_COAP_TENANTIDLETIMEOUT` for a description of the format. |
+| `HONO_COAP_DTLS_CLUSTER_PORT`<br>`hono.coap.dtls.cluster.port` | no | `5685` | The UDP port that the adapter uses for exchanging DTLS records with other cluster nodes. |
 | `HONO_COAP_DEFAULTSENABLED`<br>`hono.coap.defaultsEnabled` | no | `true` | If set to `true` the protocol adapter uses *default values* registered for a device and/or its tenant to augment messages published by the device with missing information like a content type. In particular, the protocol adapter adds such default values as Kafka record headers or AMQP 1.0 message (application) properties before the message is sent downstream. |
 | `HONO_COAP_EXCHANGELIFETIME`<br>`hono.coap.exchangeLifetime` | no | 247000 | The exchange lifetime in milliseconds. According RFC 7252, that value is 247s. Such a large time requires also a huge amount of heap. That time includes a processing time of 100s and retransmissions of CON messages. Therefore a practical value could be much smaller. |
 | `HONO_COAP_GCHEAPPERCENTAGE`<br>`hono.coap.gcHeapPercentage` | no | `25` | The share of heap memory that should not be used by the live-data set but should be left to be used by the garbage collector. This property is used for determining the maximum number of (device) connections that the adapter should support. The value may be adapted to better reflect the characteristics of the type of garbage collector being used by the JVM and the total amount of memory available to the JVM. |
@@ -119,6 +130,70 @@ otherwise startup will fail.
 
 Both the secure as well as the insecure port numbers may be explicitly set to `0`. The protocol adapter will then use
 arbitrary (unused) port numbers determined by the operating system during startup.
+
+## Cluster Mode
+
+When multiple CoAP adapter instances run behind a UDP load balancer, a device's datagrams may reach another adapter
+instance than the one that the device has established its DTLS connection with, e.g. because the device's address has
+changed due to a NAT rebinding. The device would then need to perform a new DTLS handshake with the other adapter
+instance.
+
+In cluster mode, each adapter instance is a node of a cluster. It issues DTLS 1.2 Connection IDs as defined by
+[RFC 9146](https://www.rfc-editor.org/rfc/rfc9146) that start with the node's ID. A node that receives a DTLS record
+containing a connection ID issued by another node forwards the record to that node. The other node processes the
+record and sends its response back via the receiving node, so that the device receives the response from the address
+that it has sent its request to. Cluster mode is based on the DTLS cluster support of Eclipse Californium.
+
+**Requirements**
+
+* A Redis server that the cluster nodes use for registering their node IDs and cluster addresses, configured by means
+  of `HONO_CACHE_REDIS_HOSTS`. The adapter uses the [Quarkus Redis client](https://quarkus.io/guides/redis-reference#configuration-reference),
+  whose configuration properties can be set using the `hono.cache.redis` prefix instead of the `quarkus.redis` prefix,
+  e.g. `HONO_CACHE_REDIS_PASSWORD` or `HONO_CACHE_REDIS_CLIENT_TYPE`. The adapter refuses to start in cluster mode if
+  `HONO_CACHE_REDIS_HOSTS` is not set.
+* A unique node ID for each adapter instance. If `HONO_COAP_DTLS_CID_NODE_ID` is not set, the adapter uses the ordinal
+  index of the Kubernetes StatefulSet pod that it runs in, e.g. `2` for pod `hono-adapter-coap-2`. This requires the
+  adapter to be deployed as a StatefulSet with at most 256 replicas. An adapter instance fails to start if its node ID
+  is registered by an adapter instance on another host.
+* A secret shared by all cluster nodes, configured by means of `HONO_COAP_DTLS_CLUSTER_MAC_SECRET`. The nodes use the
+  secret for calculating a MAC of each record that they exchange, and drop records with an invalid MAC.
+* An address that other cluster nodes can reach the node's cluster port at, configured by means of
+  `HONO_COAP_DTLS_CLUSTER_ADVERTISED_ADDRESS`. In Kubernetes, this is usually the pod's IP address.
+* Network access to the cluster port (`HONO_COAP_DTLS_CLUSTER_PORT`) from the other adapter pods. The port should not be
+  reachable from anywhere else, e.g. by means of a Kubernetes network policy.
+
+**Behavior**
+
+* Each node registers itself when it starts, renews its registration at the interval configured by means of
+  `HONO_COAP_DTLS_CLUSTER_HEARTBEAT` and removes the registration when it is shut down. The registration of a node that
+  terminates unexpectedly expires after the time configured by means of `HONO_COAP_DTLS_CLUSTER_NODE_TTL`. A pod that
+  is restarted replaces the registration of its previous instance immediately.
+* The adapter deploys a single verticle instance, because only one DTLS connector can bind the secure port and the
+  cluster port.
+* DTLS session resumption is not supported. A device that has lost its DTLS connection, e.g. because the node that it
+  was connected to has been shut down, needs to perform a new handshake.
+* The number of records exchanged with other cluster nodes is reported by means of the
+  [CoAP adapter cluster metrics]({{< relref "/api/Metrics#coap-adapter-cluster-metrics" >}}).
+
+The following example shows the environment variables of a CoAP adapter container that is part of a Kubernetes
+StatefulSet:
+
+```yaml
+env:
+  - name: HONO_COAP_DTLS_CLUSTER_ENABLED
+    value: "true"
+  - name: HONO_COAP_DTLS_CLUSTER_ADVERTISED_ADDRESS
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
+  - name: HONO_COAP_DTLS_CLUSTER_MAC_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: hono-coap-cluster
+        key: mac-secret
+  - name: HONO_CACHE_REDIS_HOSTS
+    value: "redis://redis:6379"
+```
 
 ## Authentication
 
