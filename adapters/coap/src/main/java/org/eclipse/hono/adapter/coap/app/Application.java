@@ -12,6 +12,7 @@
  */
 package org.eclipse.hono.adapter.coap.app;
 
+import java.util.Optional;
 import java.util.Set;
 
 import org.eclipse.hono.adapter.AbstractProtocolAdapterApplication;
@@ -24,6 +25,7 @@ import org.eclipse.hono.adapter.coap.EventResource;
 import org.eclipse.hono.adapter.coap.TelemetryResource;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
+import org.eclipse.hono.adapter.coap.cluster.ClusterNodeIdentity;
 import org.eclipse.hono.adapter.coap.impl.ConfigBasedCoapEndpointFactory;
 import org.eclipse.hono.adapter.coap.impl.VertxBasedCoapAdapter;
 import org.eclipse.hono.deviceconnection.common.Cache;
@@ -57,16 +59,50 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
      * {@inheritDoc}
      * <p>
      * In cluster mode, verifies that the cache required for sharing cluster state has been
-     * configured and limits the number of adapter verticle instances to one before deploying
-     * the adapter.
+     * configured, determines the node ID to use in connection IDs and limits the number of
+     * adapter verticle instances to one before deploying the adapter.
      */
     @Override
     protected void doStart() {
         if (protocolAdapterProperties.isClusterEnabled()) {
             CacheProducer.checkRedisHostsConfigured(ConfigProvider.getConfig());
+            protocolAdapterProperties.setCidNodeId(resolveCidNodeId(
+                    protocolAdapterProperties.getCidNodeId(),
+                    ClusterNodeIdentity.localHostName()));
             limitToSingleAdapterInstance(appConfig);
         }
         super.doStart();
+    }
+
+    /**
+     * Determines the cluster node ID to use in connection IDs.
+     * <p>
+     * An explicitly configured node ID is used as is. Otherwise, the node ID is the ordinal index of the
+     * Kubernetes StatefulSet pod that the adapter runs in, which is determined from the host name.
+     *
+     * @param configuredNodeId The configured node ID or a negative number if no node ID has been configured.
+     * @param hostName The local host name.
+     * @return The node ID.
+     * @throws IllegalStateException if no node ID has been configured and the host name does not contain
+     *                               an ordinal index that can be used as a node ID.
+     */
+    static int resolveCidNodeId(final int configuredNodeId, final Optional<String> hostName) {
+        if (configuredNodeId >= 0) {
+            return configuredNodeId;
+        }
+        final String name = hostName.orElseThrow(() -> new IllegalStateException(
+                "cluster mode requires a node ID, hono.coap.dtls.cid.node-id must be set"
+                + " if the adapter does not run in a Kubernetes StatefulSet"));
+        final int ordinal = ClusterNodeIdentity.statefulSetOrdinal(name).orElseThrow(() -> new IllegalStateException(
+                "cluster mode requires a node ID, hono.coap.dtls.cid.node-id must be set because host name ["
+                + name + "] does not end with the ordinal index of a Kubernetes StatefulSet pod"));
+        if (ordinal > CacheBasedCoapClusterNodeRegistry.MAX_NODE_ID) {
+            throw new IllegalStateException(String.format(
+                    "StatefulSet pod ordinal %d of host [%s] exceeds the maximum cluster node ID %d",
+                    ordinal, name, CacheBasedCoapClusterNodeRegistry.MAX_NODE_ID));
+        }
+        LOG.info("using StatefulSet pod ordinal of host [{}] as cluster node ID [{}]", name, ordinal);
+        return ordinal;
     }
 
     /**

@@ -13,7 +13,11 @@
 
 package org.eclipse.hono.adapter.coap.cluster;
 
+import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Helper methods for identifying the CoAP adapter instance that runs in the local process.
@@ -26,6 +30,13 @@ public final class ClusterNodeIdentity {
      * Kubernetes sets this variable to the name of the pod that a container runs in.
      */
     public static final String ENV_HOSTNAME = "HOSTNAME";
+
+    /**
+     * The pattern of the names of pods that belong to a Kubernetes StatefulSet.
+     * <p>
+     * The name of such a pod consists of the name of the StatefulSet, a hyphen and the pod's ordinal index.
+     */
+    private static final Pattern STATEFUL_SET_POD_NAME = Pattern.compile("^.+-(\\d{1,9})$");
 
     private ClusterNodeIdentity() {
         // prevent instantiation
@@ -43,5 +54,21 @@ public final class ClusterNodeIdentity {
         return Optional.ofNullable(System.getenv(ENV_HOSTNAME))
                 .map(String::trim)
                 .filter(name -> !name.isEmpty());
+    }
+
+    /**
+     * Gets the ordinal index of a Kubernetes StatefulSet pod from the pod's name.
+     *
+     * @param hostName The host name, which is the pod's name in a Kubernetes pod.
+     * @return The ordinal index or an empty optional if the name does not end with a hyphen and a number.
+     * @throws NullPointerException if host name is {@code null}.
+     */
+    public static OptionalInt statefulSetOrdinal(final String hostName) {
+        Objects.requireNonNull(hostName);
+        final Matcher matcher = STATEFUL_SET_POD_NAME.matcher(hostName);
+        if (matcher.matches()) {
+            return OptionalInt.of(Integer.parseInt(matcher.group(1)));
+        }
+        return OptionalInt.empty();
     }
 }
