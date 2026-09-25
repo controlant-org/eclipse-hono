@@ -229,7 +229,7 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
                         return Future.failedFuture(t);
                     }
                 })
-                .recover(t -> leaveCluster().transform(v -> Future.<Void>failedFuture(t)))
+                .recover(t -> leaveClusterOnContext().transform(v -> Future.<Void>failedFuture(t)))
                 .onComplete(startPromise);
     }
 
@@ -353,10 +353,27 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
                 });
     }
 
-    private Future<Void> leaveCluster() {
+    private Future<Void> leaveClusterOnContext() {
         return Optional.ofNullable(clusterMembership)
                 .map(CoapClusterMembership::leave)
                 .orElseGet(Future::succeededFuture);
+    }
+
+    /**
+     * Leaves the cluster of adapter instances if this adapter has joined it.
+     * <p>
+     * The adapter leaves the cluster when it is stopped. This method allows the adapter to leave the
+     * cluster earlier, e.g. when the application is being shut down and the resources required for
+     * removing the adapter's registration are about to be released.
+     * <p>
+     * This method may be invoked from any thread.
+     *
+     * @return A future that is completed once the adapter has left the cluster. The future never fails.
+     */
+    public final Future<Void> leaveCluster() {
+        final Promise<Void> result = Promise.promise();
+        runOnContext(go -> leaveClusterOnContext().onComplete(result));
+        return result.future();
     }
 
     /**
@@ -378,7 +395,7 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
         }
 
         // leaving the cluster never fails and is limited in time
-        leaveCluster()
+        leaveClusterOnContext()
                 .compose(v -> vertx.executeBlocking(() -> {
                     if (server != null) {
                         server.stop();

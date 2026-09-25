@@ -14,6 +14,9 @@ package org.eclipse.hono.adapter.coap.app;
 
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.hono.adapter.AbstractProtocolAdapterApplication;
 import org.eclipse.hono.adapter.coap.CoapAdapterMetrics;
@@ -26,6 +29,7 @@ import org.eclipse.hono.adapter.coap.TelemetryResource;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
 import org.eclipse.hono.adapter.coap.cluster.ClusterNodeIdentity;
+import org.eclipse.hono.adapter.coap.cluster.CoapClusterMembership;
 import org.eclipse.hono.adapter.coap.impl.ConfigBasedCoapEndpointFactory;
 import org.eclipse.hono.adapter.coap.impl.VertxBasedCoapAdapter;
 import org.eclipse.hono.deviceconnection.common.Cache;
@@ -37,7 +41,9 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.quarkus.runtime.ShutdownEvent;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
@@ -54,6 +60,8 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
 
     @Inject
     Instance<Cache<String, String>> cacheInstance;
+
+    private volatile VertxBasedCoapAdapter clusterAdapter;
 
     /**
      * {@inheritDoc}
@@ -103,6 +111,32 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
         }
         LOG.info("using StatefulSet pod ordinal of host [{}] as cluster node ID [{}]", name, ordinal);
         return ordinal;
+    }
+
+    /**
+     * Makes the adapter leave the cluster when the application is being shut down.
+     * <p>
+     * The adapter verticle is only stopped after the Redis client has been released, which prevents
+     * the adapter from removing its registration when it is stopped. The registration would then only
+     * expire after the node TTL, during which other cluster nodes would keep forwarding records to it.
+     *
+     * @param event The shutdown event.
+     */
+    void leaveClusterOnShutdown(@Observes final ShutdownEvent event) {
+        final VertxBasedCoapAdapter adapter = clusterAdapter;
+        if (adapter == null) {
+            return;
+        }
+        try {
+            adapter.leaveCluster()
+                    .toCompletionStage()
+                    .toCompletableFuture()
+                    .get(CoapClusterMembership.DEFAULT_LEAVE_TIMEOUT.plusSeconds(1).toMillis(), TimeUnit.MILLISECONDS);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (final ExecutionException | TimeoutException e) {
+            LOG.warn("failed to leave cluster during shutdown", e);
+        }
     }
 
     /**
@@ -157,6 +191,7 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
             final CacheBasedClusterNodesProvider provider = new CacheBasedClusterNodesProvider(registry);
             adapter.setClusterNodesProvider(provider);
             endpointFactory.setClusterNodesProvider(provider);
+            clusterAdapter = adapter;
         }
 
         adapter.setCoapEndpointFactory(endpointFactory);

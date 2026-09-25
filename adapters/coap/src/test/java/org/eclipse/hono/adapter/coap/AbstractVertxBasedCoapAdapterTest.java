@@ -684,6 +684,41 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     }
 
     /**
+     * Verifies that the adapter can leave the cluster before it is stopped.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testLeaveClusterBeforeStop(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        givenAnAdapter(properties);
+        adapter.init(vertx, vertx.getOrCreateContext());
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
+
+        final Promise<Void> startPromise = Promise.promise();
+        adapter.start(startPromise);
+
+        startPromise.future()
+                .compose(v -> adapter.leaveCluster())
+                .compose(v -> {
+                    ctx.verify(() -> {
+                        verify(registry).unregisterNode(eq(42));
+                        assertThat(adapter.getClusterMembership().isJoined()).isFalse();
+                    });
+                    final Promise<Void> stopPromise = Promise.promise();
+                    adapter.stop(stopPromise);
+                    return stopPromise.future();
+                })
+                .onComplete(ctx.succeeding(v -> {
+                    ctx.verify(() -> verify(server).stop());
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
      * Verifies that the CoAP server is stopped even if the <em>preShutdown</em> method throws an exception.
      *
      * @param ctx The helper to use for running async tests on vertx.
