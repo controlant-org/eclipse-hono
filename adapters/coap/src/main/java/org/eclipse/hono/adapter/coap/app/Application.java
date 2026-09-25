@@ -30,8 +30,7 @@ import org.eclipse.hono.deviceconnection.common.Cache;
 import org.eclipse.hono.util.CommandConstants;
 import org.eclipse.hono.util.EventConstants;
 import org.eclipse.hono.util.TelemetryConstants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.eclipse.microprofile.config.ConfigProvider;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
@@ -43,13 +42,25 @@ import jakarta.inject.Inject;
 @ApplicationScoped
 public class Application extends AbstractProtocolAdapterApplication<CoapAdapterProperties> {
 
-    private static final Logger LOG = LoggerFactory.getLogger(Application.class);
-
     @Inject
     CoapAdapterMetrics metrics;
 
     @Inject
     Instance<Cache<String, String>> cacheInstance;
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Verifies that the cache required for cluster mode has been configured before
+     * deploying the adapter.
+     */
+    @Override
+    protected void doStart() {
+        if (protocolAdapterProperties.isClusterEnabled()) {
+            CacheProducer.checkRedisHostsConfigured(ConfigProvider.getConfig());
+        }
+        super.doStart();
+    }
 
     /**
      * {@inheritDoc}
@@ -74,16 +85,15 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
         endpointFactory.setCertificateVerifier(new DeviceRegistryBasedCertificateVerifier(vertx, adapter, tracer));
 
         if (protocolAdapterProperties.isClusterEnabled()) {
-            if (cacheInstance != null && cacheInstance.isResolvable()) {
-                final Cache<String, String> cache = cacheInstance.get();
-                final CacheBasedCoapClusterNodeRegistry registry = new CacheBasedCoapClusterNodeRegistry(cache);
-                adapter.setClusterNodeRegistry(registry);
-                final CacheBasedClusterNodesProvider provider = new CacheBasedClusterNodesProvider(registry);
-                adapter.setClusterNodesProvider(provider);
-                endpointFactory.setClusterNodesProvider(provider);
-            } else {
-                LOG.warn("Cluster mode is enabled, but no Cache bean is available");
+            if (cacheInstance == null || !cacheInstance.isResolvable()) {
+                throw new IllegalStateException("cluster mode is enabled but no cache is available");
             }
+            final Cache<String, String> cache = cacheInstance.get();
+            final CacheBasedCoapClusterNodeRegistry registry = new CacheBasedCoapClusterNodeRegistry(cache);
+            adapter.setClusterNodeRegistry(registry);
+            final CacheBasedClusterNodesProvider provider = new CacheBasedClusterNodesProvider(registry);
+            adapter.setClusterNodesProvider(provider);
+            endpointFactory.setClusterNodesProvider(provider);
         }
 
         adapter.setCoapEndpointFactory(endpointFactory);
