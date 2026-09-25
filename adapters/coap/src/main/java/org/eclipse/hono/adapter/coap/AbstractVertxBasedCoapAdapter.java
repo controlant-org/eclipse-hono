@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ * Copyright (c) 2018, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -12,6 +12,8 @@
  */
 package org.eclipse.hono.adapter.coap;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,6 +24,9 @@ import org.eclipse.californium.core.coap.CoAP;
 import org.eclipse.californium.core.network.Endpoint;
 import org.eclipse.californium.core.server.resources.Resource;
 import org.eclipse.hono.adapter.AbstractProtocolAdapterBase;
+import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
+import org.eclipse.hono.adapter.coap.cluster.CoapClusterMembership;
+import org.eclipse.hono.adapter.coap.cluster.CoapClusterNodeRegistry;
 import org.eclipse.hono.util.Constants;
 
 import io.vertx.core.Future;
@@ -52,6 +57,9 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     private CoapEndpointFactory endpointFactory;
     private CoapServer server;
     private CoapAdapterMetrics metrics = CoapAdapterMetrics.NOOP;
+    private CoapClusterNodeRegistry clusterNodeRegistry;
+    private CacheBasedClusterNodesProvider clusterNodesProvider;
+    private CoapClusterMembership clusterMembership;
 
     /**
      * Sets the factory for creating CoAP endpoints.
@@ -80,6 +88,53 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     @Override
     public final CoapAdapterMetrics getMetrics() {
         return metrics;
+    }
+
+    /**
+     * Sets the registry for tracking active CoAP cluster nodes.
+     *
+     * @param clusterNodeRegistry The registry.
+     */
+    public void setClusterNodeRegistry(final CoapClusterNodeRegistry clusterNodeRegistry) {
+        this.clusterNodeRegistry = clusterNodeRegistry;
+    }
+
+    /**
+     * Sets the provider for Californium DTLS cluster node discovery.
+     *
+     * @param clusterNodesProvider The provider.
+     */
+    public void setClusterNodesProvider(final CacheBasedClusterNodesProvider clusterNodesProvider) {
+        this.clusterNodesProvider = clusterNodesProvider;
+    }
+
+    CoapClusterMembership getClusterMembership() {
+        return clusterMembership;
+    }
+
+    /**
+     * Determines the socket address that other cluster nodes use for reaching this node's cluster connector.
+     * <p>
+     * The address is the configured advertised address, or the bind address if no advertised address
+     * has been configured. A wildcard address cannot be reached by other cluster nodes.
+     *
+     * @return A future containing the resolved address, or a failed future if the address cannot be resolved
+     *         or is a wildcard address.
+     */
+    private Future<InetSocketAddress> resolveClusterAddress() {
+        final T config = getConfig();
+        final String host = Optional.ofNullable(config.getClusterAdvertisedAddress())
+                .orElseGet(config::getClusterBindAddress);
+        return vertx.executeBlocking(() -> new InetSocketAddress(InetAddress.getByName(host), config.getClusterPort()))
+                .compose(address -> {
+                    if (address.getAddress().isAnyLocalAddress()) {
+                        return Future.failedFuture(new IllegalStateException(
+                                "cluster mode requires an address that other cluster nodes can reach,"
+                                + " hono.coap.dtls.cluster.advertised-address must be set, e.g. to the IP address"
+                                + " of the pod, if the cluster connector is bound to a wildcard address"));
+                    }
+                    return Future.succeededFuture(address);
+                });
     }
 
     /**
@@ -159,6 +214,7 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
                 .map(Future::succeededFuture)
                 .orElseGet(this::createServer)
                 .compose(serverToStart -> preStartup().map(serverToStart))
+                .compose(serverToStart -> joinCluster().map(serverToStart))
                 .onSuccess(this::addResources)
                 .compose(serverToStart -> vertx.executeBlocking(() -> {
                     serverToStart.start();
@@ -173,6 +229,7 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
                         return Future.failedFuture(t);
                     }
                 })
+                .recover(t -> leaveClusterOnContext().transform(v -> Future.<Void>failedFuture(t)))
                 .onComplete(startPromise);
     }
 
@@ -209,10 +266,15 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
                                 this.insecureEndpoint = ep;
                             });
 
-                    return Future.any(insecureEndpointFuture, secureEndpointFuture)
-                            .map(ok -> {
+                    return Future.join(insecureEndpointFuture, secureEndpointFuture)
+                            .transform(ar -> {
+                                // the DTLS cluster connector is part of the secure endpoint
+                                if (secureEndpointFuture.failed()
+                                        && (insecureEndpointFuture.failed() || getConfig().isClusterEnabled())) {
+                                    return Future.failedFuture(secureEndpointFuture.cause());
+                                }
                                 this.server = newServer;
-                                return newServer;
+                                return Future.succeededFuture(newServer);
                             });
                 });
     }
@@ -239,6 +301,82 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     }
 
     /**
+     * Joins the cluster of adapter instances if cluster mode is enabled.
+     * <p>
+     * The cluster is joined before the CoAP server is started. This is safe because other cluster nodes
+     * only forward DTLS records that contain a connection ID issued by this node, and no such connection
+     * IDs exist before the server has been started.
+     *
+     * @return A future indicating the outcome of the operation.
+     */
+    private Future<Void> joinCluster() {
+
+        final T config = getConfig();
+        if (!config.isClusterEnabled()) {
+            return Future.succeededFuture();
+        }
+        if (clusterNodeRegistry == null) {
+            return Future.failedFuture(
+                    new IllegalStateException("clusterNodeRegistry property must be set when cluster mode is enabled"));
+        }
+        if (clusterNodesProvider == null) {
+            return Future.failedFuture(
+                    new IllegalStateException("clusterNodesProvider property must be set when cluster mode is enabled"));
+        }
+        if (config.getCidNodeId() < 0) {
+            return Future.failedFuture(
+                    new IllegalStateException("cidNodeId must be configured when cluster mode is enabled"));
+        }
+        if (config.getClusterHeartbeat().compareTo(config.getClusterNodeTtl()) >= 0) {
+            return Future.failedFuture(new IllegalStateException(String.format(
+                    "cluster heartbeat interval (%s) must be shorter than the cluster node TTL (%s)",
+                    config.getClusterHeartbeat(), config.getClusterNodeTtl())));
+        }
+        if (config.getClusterHeartbeat().multipliedBy(2).compareTo(config.getClusterNodeTtl()) > 0) {
+            log.warn("""
+                    cluster node registration may expire before it is renewed, cluster heartbeat interval ({}) \
+                    should not exceed half of the cluster node TTL ({})\
+                    """, config.getClusterHeartbeat(), config.getClusterNodeTtl());
+        }
+        return resolveClusterAddress()
+                .compose(address -> {
+                    clusterMembership = new CoapClusterMembership(
+                            vertx,
+                            clusterNodeRegistry,
+                            clusterNodesProvider,
+                            config.getCidNodeId(),
+                            address,
+                            config.getClusterNodeTtl(),
+                            config.getClusterHeartbeat(),
+                            CoapClusterMembership.DEFAULT_LEAVE_TIMEOUT);
+                    return clusterMembership.join();
+                });
+    }
+
+    private Future<Void> leaveClusterOnContext() {
+        return Optional.ofNullable(clusterMembership)
+                .map(CoapClusterMembership::leave)
+                .orElseGet(Future::succeededFuture);
+    }
+
+    /**
+     * Leaves the cluster of adapter instances if this adapter has joined it.
+     * <p>
+     * The adapter leaves the cluster when it is stopped. This method allows the adapter to leave the
+     * cluster earlier, e.g. when the application is being shut down and the resources required for
+     * removing the adapter's registration are about to be released.
+     * <p>
+     * This method may be invoked from any thread.
+     *
+     * @return A future that is completed once the adapter has left the cluster. The future never fails.
+     */
+    public final Future<Void> leaveCluster() {
+        final Promise<Void> result = Promise.promise();
+        runOnContext(go -> leaveClusterOnContext().onComplete(result));
+        return result.future();
+    }
+
+    /**
      * Invoked after this adapter has started up successfully.
      * <p>
      * May be overridden by sub-classes.
@@ -256,14 +394,16 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
             log.error("error in preShutdown", e);
         }
 
-        vertx.executeBlocking(() -> {
-            if (server != null) {
-                server.stop();
-            }
-            return (Void) null;
-        })
-        .compose(ok -> postShutdown())
-        .onComplete(stopPromise);
+        // leaving the cluster never fails and is limited in time
+        leaveClusterOnContext()
+                .compose(v -> vertx.executeBlocking(() -> {
+                    if (server != null) {
+                        server.stop();
+                    }
+                    return (Void) null;
+                }))
+                .compose(ok -> postShutdown())
+                .onComplete(stopPromise);
     }
 
     /**
@@ -283,3 +423,4 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
         return Future.succeededFuture();
     }
 }
+

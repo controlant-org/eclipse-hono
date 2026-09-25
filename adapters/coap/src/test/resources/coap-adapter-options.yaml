@@ -1,0 +1,16 @@
+hono:
+  coap:
+    dtls:
+      cid:
+        enabled: true
+        length: 8
+        node-id: 15
+      cluster:
+        enabled: true
+        port: 5686
+        bind-address: 192.168.1.1
+        advertised-address: 192.168.1.2
+        mac-secret: secret-key
+        heartbeat: PT12S
+        node-ttl: PT35S
+

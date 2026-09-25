@@ -16,9 +16,11 @@ package org.eclipse.hono.deviceconnection.infinispan.client;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.hono.deviceconnection.common.CommonCacheConfig;
+import org.infinispan.client.hotrod.Flag;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheContainer;
 import org.infinispan.client.hotrod.RemoteCacheManager;
@@ -145,6 +147,24 @@ public final class HotrodCache<K, V> extends BasicCache<K, V> {
             LOG.info("already trying to establish connection to data grid");
             return Future.failedFuture("already trying to establish connection to data grid");
         }
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Requests the previous value explicitly because a remote cache does not return previous
+     * values by default.
+     */
+    @Override
+    public Future<Boolean> putIfAbsent(final K key, final V value, final long lifespan, final TimeUnit lifespanUnit) {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(value);
+        Objects.requireNonNull(lifespanUnit);
+
+        return withCache(aCache -> ((RemoteCache<K, V>) aCache)
+                .withFlags(Flag.FORCE_RETURN_VALUE)
+                .putIfAbsentAsync(key, value, lifespan, lifespanUnit)
+                .thenApply(Objects::isNull));
     }
 
     @Override
