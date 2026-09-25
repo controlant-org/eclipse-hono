@@ -576,6 +576,55 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     }
 
     /**
+     * Verifies that startup fails in cluster mode if the secure endpoint, which contains the
+     * DTLS cluster connector, cannot be created, even if the insecure endpoint can be created.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterStartupFailsWhenSecureEndpointCannotBeCreated(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        final CoapEndpointFactory endpointFactory = mock(CoapEndpointFactory.class);
+        when(endpointFactory.getCoapServerConfiguration()).thenReturn(Future.succeededFuture(new Configuration()));
+        when(endpointFactory.getInsecureEndpoint()).thenReturn(Future.succeededFuture(mock(Endpoint.class)));
+        when(endpointFactory.getSecureEndpoint())
+                .thenReturn(Future.failedFuture(new IllegalStateException("mac-secret must be set")));
+        adapter = new AbstractVertxBasedCoapAdapter<>() {
+
+            @Override
+            public String getTypeName() {
+                return "test";
+            }
+        };
+        adapter.setConfig(properties);
+        adapter.setCoapEndpointFactory(endpointFactory);
+        adapter.setMetrics(metrics);
+        adapter.setResourceLimitChecks(resourceLimitChecks);
+        adapter.setTenantClient(tenantClient);
+        adapter.setMessagingClientProviders(createMessagingClientProviders());
+        adapter.setRegistrationClient(registrationClient);
+        adapter.setCredentialsClient(credentialsClient);
+        adapter.setCommandConsumerFactory(commandConsumerFactory);
+        adapter.setCommandRouterClient(commandRouterClient);
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
+        adapter.init(vertx, vertx.getOrCreateContext());
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future().onComplete(ctx.failing(t -> {
+            ctx.verify(() -> {
+                assertThat(t).hasMessageThat().contains("mac-secret must be set");
+                verify(registry, never()).registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class));
+            });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
      * Verifies that the adapter leaves the cluster again if the CoAP server cannot be started.
      *
      * @param ctx The helper to use for running async tests on vertx.

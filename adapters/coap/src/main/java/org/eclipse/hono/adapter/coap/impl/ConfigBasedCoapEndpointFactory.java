@@ -18,16 +18,12 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 
 import org.eclipse.californium.core.coap.CoAP;
 import org.eclipse.californium.core.coap.option.MapBasedOptionRegistry;
@@ -53,6 +49,7 @@ import org.eclipse.californium.scandium.dtls.x509.SingleCertificateProvider;
 import org.eclipse.hono.adapter.coap.CoapAdapterProperties;
 import org.eclipse.hono.adapter.coap.CoapEndpointFactory;
 import org.eclipse.hono.adapter.coap.DeviceInfoSupplier;
+import org.eclipse.hono.adapter.coap.cluster.MacProtectedDtlsClusterConnector;
 import org.eclipse.hono.adapter.coap.option.TimeOption;
 import org.eclipse.hono.adapter.limiting.MemoryBasedConnectionLimitStrategy;
 import org.eclipse.hono.config.KeyLoader;
@@ -373,6 +370,10 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
                 return Future.failedFuture(new IllegalStateException(
                         "cidNodeId must be configured when cluster mode is enabled"));
             }
+            if (config.getClusterMacSecret() == null || config.getClusterMacSecret().isEmpty()) {
+                return Future.failedFuture(new IllegalStateException(
+                        "hono.coap.dtls.cluster.mac-secret must be set when cluster mode is enabled"));
+            }
         }
 
         LOG.info("creating secure endpoint");
@@ -399,16 +400,14 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
                 dtlsConfig.set(DtlsConfig.DTLS_CONNECTION_ID_LENGTH, config.getCidLength());
                 final DtlsConnectorConfig dtlsConnectorConfig = dtlsConfig.build();
                 logCiphers(dtlsConnectorConfig);
-                final DtlsClusterConnectorConfig.Builder clusterConfigBuilder = DtlsClusterConnectorConfig.builder();
-                clusterConfigBuilder.setAddress(
-                        new InetSocketAddress(config.getClusterBindAddress(), config.getClusterPort()));
-                if (config.getClusterMacSecret() != null && !config.getClusterMacSecret().isEmpty()) {
-                    final SecretKey key = new SecretKeySpec(
-                            config.getClusterMacSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
-                    clusterConfigBuilder.setSecure("coap-cluster", key);
-                }
-                final DtlsClusterConnectorConfig clusterConfig = clusterConfigBuilder.build();
-                dtlsConnector = new DtlsClusterConnector(dtlsConnectorConfig, clusterConfig, clusterNodesProvider);
+                final DtlsClusterConnectorConfig clusterConfig = DtlsClusterConnectorConfig.builder()
+                        .setAddress(new InetSocketAddress(config.getClusterBindAddress(), config.getClusterPort()))
+                        .build();
+                dtlsConnector = new MacProtectedDtlsClusterConnector(
+                        dtlsConnectorConfig,
+                        clusterConfig,
+                        clusterNodesProvider,
+                        MacProtectedDtlsClusterConnector.createMacKey(config.getClusterMacSecret()));
             } else if (config.isCidEnabled()) {
                 final SingleNodeConnectionIdGenerator cidGen =
                         new SingleNodeConnectionIdGenerator(config.getCidLength());
@@ -429,7 +428,7 @@ public class ConfigBasedCoapEndpointFactory implements CoapEndpointFactory {
             builder.setObservationStore(observationStore);
             return Future.succeededFuture(builder.build());
 
-        } catch (final IllegalStateException ex) {
+        } catch (final IllegalStateException | IllegalArgumentException ex) {
             LOG.warn("failed to create secure endpoint", ex);
             return Future.failedFuture(ex);
         }

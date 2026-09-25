@@ -33,6 +33,7 @@ import org.eclipse.californium.scandium.dtls.MultiNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedPskStore;
 import org.eclipse.hono.adapter.coap.CoapAdapterProperties;
+import org.eclipse.hono.adapter.coap.cluster.MacProtectedDtlsClusterConnector;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +51,8 @@ import io.vertx.junit5.VertxTestContext;
 @ExtendWith(VertxExtension.class)
 @Timeout(value = 10, timeUnit = TimeUnit.SECONDS)
 public class ConfigBasedCoapEndpointFactoryTest {
+
+    private static final String MAC_SECRET = "a-shared-secret-of-sufficient-length";
 
     private static Vertx vertx;
     private CoapAdapterProperties properties;
@@ -163,7 +166,7 @@ public class ConfigBasedCoapEndpointFactoryTest {
         properties.setCidLength(6);
         properties.setClusterPort(5685);
         properties.setClusterBindAddress("127.0.0.1");
-        properties.setClusterMacSecret("test-secret");
+        properties.setClusterMacSecret(MAC_SECRET);
 
         final ConfigBasedCoapEndpointFactory factory = new ConfigBasedCoapEndpointFactory(vertx, properties);
         factory.setPskStore(mock(AdvancedPskStore.class));
@@ -174,7 +177,7 @@ public class ConfigBasedCoapEndpointFactoryTest {
             ctx.verify(() -> {
                 assertNotNull(endpoint);
                 final Object connector = ((CoapEndpoint) endpoint).getConnector();
-                assertInstanceOf(DtlsClusterConnector.class, connector);
+                assertInstanceOf(MacProtectedDtlsClusterConnector.class, connector);
 
                 final DtlsClusterConnector clusterConnector = (DtlsClusterConnector) connector;
                 assertEquals(2, clusterConnector.getNodeID());
@@ -240,12 +243,13 @@ public class ConfigBasedCoapEndpointFactoryTest {
     }
 
     /**
-     * Verifies that cluster connector is successfully created even without MAC secret.
+     * Verifies that cluster mode fails if no MAC secret has been configured, because the
+     * cluster connector would accept records from anybody who can reach the cluster port.
      *
      * @param ctx The test context.
      */
     @Test
-    void testClusterEnabledWithoutMacSecret(final VertxTestContext ctx) {
+    void testClusterEnabledFailsWithoutMacSecret(final VertxTestContext ctx) {
         properties.setClusterEnabled(true);
         properties.setCidNodeId(0);
         properties.setClusterMacSecret(null);
@@ -254,11 +258,33 @@ public class ConfigBasedCoapEndpointFactoryTest {
         factory.setPskStore(mock(AdvancedPskStore.class));
         factory.setClusterNodesProvider(mock(DtlsClusterConnector.ClusterNodesProvider.class));
 
-        factory.getSecureEndpoint().onComplete(ctx.succeeding(endpoint -> {
+        factory.getSecureEndpoint().onComplete(ctx.failing(cause -> {
             ctx.verify(() -> {
-                assertNotNull(endpoint);
-                assertInstanceOf(DtlsClusterConnector.class, ((CoapEndpoint) endpoint).getConnector());
+                assertInstanceOf(IllegalStateException.class, cause);
+                assertEquals("hono.coap.dtls.cluster.mac-secret must be set when cluster mode is enabled",
+                        cause.getMessage());
             });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
+     * Verifies that cluster mode fails if the MAC secret is too short.
+     *
+     * @param ctx The test context.
+     */
+    @Test
+    void testClusterEnabledFailsForShortMacSecret(final VertxTestContext ctx) {
+        properties.setClusterEnabled(true);
+        properties.setCidNodeId(0);
+        properties.setClusterMacSecret("too-short");
+
+        final ConfigBasedCoapEndpointFactory factory = new ConfigBasedCoapEndpointFactory(vertx, properties);
+        factory.setPskStore(mock(AdvancedPskStore.class));
+        factory.setClusterNodesProvider(mock(DtlsClusterConnector.ClusterNodesProvider.class));
+
+        factory.getSecureEndpoint().onComplete(ctx.failing(cause -> {
+            ctx.verify(() -> assertInstanceOf(IllegalArgumentException.class, cause));
             ctx.completeNow();
         }));
     }

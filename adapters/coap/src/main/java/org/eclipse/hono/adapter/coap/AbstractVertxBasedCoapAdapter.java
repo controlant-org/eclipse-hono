@@ -266,10 +266,15 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
                                 this.insecureEndpoint = ep;
                             });
 
-                    return Future.any(insecureEndpointFuture, secureEndpointFuture)
-                            .map(ok -> {
+                    return Future.join(insecureEndpointFuture, secureEndpointFuture)
+                            .transform(ar -> {
+                                // the DTLS cluster connector is part of the secure endpoint
+                                if (secureEndpointFuture.failed()
+                                        && (insecureEndpointFuture.failed() || getConfig().isClusterEnabled())) {
+                                    return Future.failedFuture(secureEndpointFuture.cause());
+                                }
                                 this.server = newServer;
-                                return newServer;
+                                return Future.succeededFuture(newServer);
                             });
                 });
     }
