@@ -50,6 +50,7 @@ import io.vertx.redis.client.RedisAPI;
  * <p>
  * If the Redis server runs in cluster mode, which the cache determines by means of the
  * {@code INFO cluster} command, operations involving multiple keys are split by hash slot.
+ * Storing multiple values with a lifespan is then only atomic per hash slot.
  */
 public class RedisCache implements Cache<String, String>, Lifecycle {
 
@@ -168,6 +169,26 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         if (millis <= 0 || data.isEmpty()) {
             return putAll(data);
         }
+        return isClusterMode()
+                .compose(cluster -> {
+                    if (!cluster) {
+                        return putAllWithLifespanInSingleScript(data, millis);
+                    }
+                    // a script may only access keys of a single hash slot in a Redis Cluster
+                    final Map<Integer, Map<String, String>> dataBySlot = data.entrySet().stream()
+                            .collect(Collectors.groupingBy(
+                                    entry -> RedisHashSlot.of(entry.getKey()),
+                                    Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+                    return Future.all(dataBySlot.values().stream()
+                            .map(slotData -> putAllWithLifespanInSingleScript(slotData, millis))
+                            .toList())
+                            .mapEmpty();
+                });
+    }
+
+    private Future<Void> putAllWithLifespanInSingleScript(
+            final Map<? extends String, ? extends String> data,
+            final long lifespanMillis) {
         final List<String> args = new ArrayList<>(data.size() * 2 + 3);
         args.add(PUT_ALL_WITH_LIFESPAN_SCRIPT);
         args.add(String.valueOf(data.size()));
@@ -176,7 +197,7 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
             args.add(k);
             values.add(v);
         });
-        args.add(String.valueOf(millis));
+        args.add(String.valueOf(lifespanMillis));
         args.addAll(values);
         return api.eval(args)
                 .mapEmpty();

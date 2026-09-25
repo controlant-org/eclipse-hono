@@ -141,6 +141,34 @@ class RedisCacheClusterTest {
     }
 
     /**
+     * Verifies that values of keys belonging to different hash slots are stored with the given lifespan.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutAllWithLifespanStoresValuesAcrossHashSlots(final VertxTestContext ctx) {
+        final String prefix = "cluster-" + UUID.randomUUID() + "-";
+        final Map<String, String> data = new LinkedHashMap<>();
+        for (int i = 0; i < 10; i++) {
+            data.put(prefix + i, "value-" + i);
+        }
+        cache.putAll(data, 60, TimeUnit.SECONDS)
+                .compose(ok -> cache.getAll(data.keySet()))
+                .compose(values -> {
+                    ctx.verify(() -> assertThat(values).containsExactlyEntriesIn(data));
+                    return Future.all(data.keySet().stream().map(api::pttl).toList());
+                })
+                .onComplete(ctx.succeeding(ttls -> {
+                    ctx.verify(() -> {
+                        for (int i = 0; i < ttls.size(); i++) {
+                            assertThat(ttls.<Response>resultAt(i).toLong()).isGreaterThan(0L);
+                        }
+                    });
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
      * Verifies that the hash slots calculated by the cache match the ones that the Redis server calculates.
      *
      * @param ctx The vert.x test context.
