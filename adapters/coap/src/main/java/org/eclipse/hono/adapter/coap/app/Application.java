@@ -27,10 +27,13 @@ import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
 import org.eclipse.hono.adapter.coap.impl.ConfigBasedCoapEndpointFactory;
 import org.eclipse.hono.adapter.coap.impl.VertxBasedCoapAdapter;
 import org.eclipse.hono.deviceconnection.common.Cache;
+import org.eclipse.hono.service.ApplicationConfigProperties;
 import org.eclipse.hono.util.CommandConstants;
 import org.eclipse.hono.util.EventConstants;
 import org.eclipse.hono.util.TelemetryConstants;
 import org.eclipse.microprofile.config.ConfigProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
@@ -42,6 +45,8 @@ import jakarta.inject.Inject;
 @ApplicationScoped
 public class Application extends AbstractProtocolAdapterApplication<CoapAdapterProperties> {
 
+    private static final Logger LOG = LoggerFactory.getLogger(Application.class);
+
     @Inject
     CoapAdapterMetrics metrics;
 
@@ -51,15 +56,36 @@ public class Application extends AbstractProtocolAdapterApplication<CoapAdapterP
     /**
      * {@inheritDoc}
      * <p>
-     * Verifies that the cache required for cluster mode has been configured before
-     * deploying the adapter.
+     * In cluster mode, verifies that the cache required for sharing cluster state has been
+     * configured and limits the number of adapter verticle instances to one before deploying
+     * the adapter.
      */
     @Override
     protected void doStart() {
         if (protocolAdapterProperties.isClusterEnabled()) {
             CacheProducer.checkRedisHostsConfigured(ConfigProvider.getConfig());
+            limitToSingleAdapterInstance(appConfig);
         }
         super.doStart();
+    }
+
+    /**
+     * Limits the number of adapter verticle instances to deploy to one.
+     * <p>
+     * Each adapter verticle instance creates its own CoAP server whose DTLS connector binds to the
+     * configured secure port and, in cluster mode, to the cluster port. A UDP port can only be bound by
+     * a single socket, and the DTLS connection state of a device must be kept by a single connector.
+     * Only one adapter verticle instance per process can therefore take part in a cluster.
+     *
+     * @param appConfig The application configuration to adjust.
+     */
+    static void limitToSingleAdapterInstance(final ApplicationConfigProperties appConfig) {
+        final int configuredInstances = appConfig.getMaxInstances();
+        if (configuredInstances > 1) {
+            LOG.warn("cluster mode supports a single adapter verticle instance only, deploying 1 instead of {} instances",
+                    configuredInstances);
+        }
+        appConfig.setMaxInstances(1);
     }
 
     /**
