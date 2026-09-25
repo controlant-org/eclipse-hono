@@ -157,6 +157,50 @@ abstract class AbstractBasicCacheTest {
     }
 
     /**
+     * Verifies that a conditional put of a value for a key that is not mapped yet
+     * results in the value being written to the data grid.
+     *
+     * @param ctx The vert.x text context.
+     */
+    @Test
+    void testPutIfAbsentSucceedsForUnmappedKey(final VertxTestContext ctx) {
+        final var grid = givenAConnectedInfinispanCache();
+        when(grid.putIfAbsentAsync(anyString(), anyString(), anyLong(), any(TimeUnit.class)))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        getCache().start()
+                .compose(ok -> getCache().putIfAbsent("key", "value", 1, TimeUnit.SECONDS))
+                .onComplete(ctx.succeeding(stored -> {
+                    ctx.verify(() -> {
+                        verify(grid).putIfAbsentAsync("key", "value", 1, TimeUnit.SECONDS);
+                        assertThat(stored).isTrue();
+                    });
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that a conditional put of a value for a key that is already mapped
+     * reports that the value has not been stored.
+     *
+     * @param ctx The vert.x text context.
+     */
+    @Test
+    void testPutIfAbsentDoesNotReplaceExistingValue(final VertxTestContext ctx) {
+        final var grid = givenAConnectedInfinispanCache();
+        when(grid.putIfAbsentAsync(anyString(), anyString(), anyLong(), any(TimeUnit.class)))
+                .thenReturn(CompletableFuture.completedFuture("existing-value"));
+        getCache().start()
+                .compose(ok -> getCache().putIfAbsent("key", "value", 1, TimeUnit.SECONDS))
+                .onComplete(ctx.succeeding(stored -> {
+                    ctx.verify(() -> {
+                        verify(grid).putIfAbsentAsync("key", "value", 1, TimeUnit.SECONDS);
+                        assertThat(stored).isFalse();
+                    });
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
      * Verifies that a request to put a value to the cache fails with the
      * root cause for the failure to access the data grid.
      *

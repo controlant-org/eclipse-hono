@@ -21,20 +21,10 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.californium.core.CoapClient;
 import org.eclipse.californium.core.CoapResource;
@@ -59,16 +49,14 @@ import org.eclipse.californium.scandium.dtls.SingleNodeConnectionIdGenerator;
 import org.eclipse.californium.scandium.dtls.pskstore.AdvancedSinglePskStore;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedClusterNodesProvider;
 import org.eclipse.hono.adapter.coap.cluster.CacheBasedCoapClusterNodeRegistry;
-import org.eclipse.hono.deviceconnection.common.Cache;
+import org.eclipse.hono.adapter.coap.cluster.InMemoryTestCache;
+import org.eclipse.hono.adapter.coap.cluster.TestClock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import io.vertx.core.Future;
-import io.vertx.core.json.JsonObject;
-
 /**
- * Integration tests verifying DTLS Connection ID (CID) cluster forwarding,
+ * Integration tests verifying DTLS Connection ID (CID) based cluster forwarding
  * and NAT rebinding handling across cluster nodes.
  */
 public class CoapClusterIntegrationTest {
@@ -320,147 +308,4 @@ public class CoapClusterIntegrationTest {
         assertNotNull(response, "CoAP response should not be null after dropped foreign packet");
         assertEquals(ResponseCode.CHANGED, response.getCode());
     }
-
-    /**
-     * In-memory cache implementation with TTL support for testing.
-     */
-    private static class InMemoryTestCache implements Cache<String, String> {
-
-        private static class CacheEntry {
-            final String value;
-            final long expiresAt;
-
-            CacheEntry(final String value, final long expiresAt) {
-                this.value = value;
-                this.expiresAt = expiresAt;
-            }
-
-            boolean isExpired(final long now) {
-                return expiresAt > 0 && now >= expiresAt;
-            }
-        }
-
-        private final ConcurrentMap<String, CacheEntry> store = new ConcurrentHashMap<>();
-        private final TestClock clock;
-
-        InMemoryTestCache(final TestClock clock) {
-            this.clock = clock;
-        }
-
-        @Override
-        public Future<JsonObject> checkForCacheAvailability() {
-            return Future.succeededFuture(new JsonObject().put("status", "UP"));
-        }
-
-        @Override
-        public Future<Void> put(final String key, final String value) {
-            return put(key, value, -1, TimeUnit.MILLISECONDS);
-        }
-
-        @Override
-        public Future<Void> put(final String key, final String value, final long lifespan, final TimeUnit lifespanUnit) {
-            Objects.requireNonNull(key);
-            Objects.requireNonNull(value);
-            final long expiresAt = lifespan > 0 ? clock.millis() + lifespanUnit.toMillis(lifespan) : -1;
-            store.put(key, new CacheEntry(value, expiresAt));
-            return Future.succeededFuture();
-        }
-
-        @Override
-        public Future<Void> putAll(final Map<? extends String, ? extends String> data) {
-            return putAll(data, -1, TimeUnit.MILLISECONDS);
-        }
-
-        @Override
-        public Future<Void> putAll(final Map<? extends String, ? extends String> data, final long lifespan,
-                final TimeUnit lifespanUnit) {
-            Objects.requireNonNull(data);
-            data.forEach((k, v) -> put(k, v, lifespan, lifespanUnit));
-            return Future.succeededFuture();
-        }
-
-        @Override
-        public Future<String> get(final String key) {
-            Objects.requireNonNull(key);
-            final CacheEntry entry = store.get(key);
-            if (entry == null) {
-                return Future.succeededFuture(null);
-            }
-            if (entry.isExpired(clock.millis())) {
-                store.remove(key, entry);
-                return Future.succeededFuture(null);
-            }
-            return Future.succeededFuture(entry.value);
-        }
-
-        @Override
-        public Future<Boolean> remove(final String key, final String value) {
-            Objects.requireNonNull(key);
-            Objects.requireNonNull(value);
-            final CacheEntry entry = store.get(key);
-            if (entry == null || entry.isExpired(clock.millis())) {
-                store.remove(key);
-                return Future.succeededFuture(false);
-            }
-            if (Objects.equals(entry.value, value)) {
-                store.remove(key, entry);
-                return Future.succeededFuture(true);
-            }
-            return Future.succeededFuture(false);
-        }
-
-        @Override
-        public Future<Map<String, String>> getAll(final Set<? extends String> keys) {
-            Objects.requireNonNull(keys);
-            final Map<String, String> result = new HashMap<>();
-            final long now = clock.millis();
-            for (final String key : keys) {
-                final CacheEntry entry = store.get(key);
-                if (entry != null) {
-                    if (entry.isExpired(now)) {
-                        store.remove(key, entry);
-                    } else {
-                        result.put(key, entry.value);
-                    }
-                }
-            }
-            return Future.succeededFuture(result);
-        }
-    }
-
-    /**
-     * Mutable clock for deterministic time manipulation in tests.
-     */
-    private static class TestClock extends Clock {
-        private final AtomicLong millis;
-
-        TestClock(final Instant initialInstant) {
-            this.millis = new AtomicLong(initialInstant.toEpochMilli());
-        }
-
-        void advance(final Duration duration) {
-            millis.addAndGet(duration.toMillis());
-        }
-
-        @Override
-        public ZoneOffset getZone() {
-            return ZoneOffset.UTC;
-        }
-
-        @Override
-        public Clock withZone(final java.time.ZoneId zone) {
-            return this;
-        }
-
-        @Override
-        public Instant instant() {
-            return Instant.ofEpochMilli(millis.get());
-        }
-
-        @Override
-        public long millis() {
-            return millis.get();
-        }
-    }
 }
-
