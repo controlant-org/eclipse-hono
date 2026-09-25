@@ -485,6 +485,68 @@ public class AbstractVertxBasedCoapAdapterTest extends ProtocolAdapterTestSuppor
     }
 
     /**
+     * Verifies that the advertised address instead of the bind address is registered.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterRegistersAdvertisedAddress(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        properties.setClusterBindAddress("0.0.0.0");
+        properties.setClusterAdvertisedAddress("10.0.0.7");
+        givenAnAdapter(properties);
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future()
+                .compose(v -> {
+                    ctx.verify(() -> verify(registry).registerNode(
+                            eq(42),
+                            eq(new InetSocketAddress("10.0.0.7", 5685)),
+                            any(Duration.class)));
+                    final Promise<Void> stopPromise = Promise.promise();
+                    adapter.stop(stopPromise);
+                    return stopPromise.future();
+                })
+                .onComplete(ctx.succeedingThenComplete());
+    }
+
+    /**
+     * Verifies that startup fails if the cluster connector is bound to a wildcard address
+     * and no advertised address has been configured.
+     *
+     * @param ctx The helper to use for running async tests on vertx.
+     */
+    @Test
+    public void testClusterStartupFailsForWildcardAddress(final VertxTestContext ctx) {
+
+        givenClusterModeProperties();
+        properties.setClusterBindAddress("::");
+        givenAnAdapter(properties);
+        final CoapClusterNodeRegistry registry = givenAClusterNodeRegistry();
+        adapter.setClusterNodeRegistry(registry);
+        adapter.setClusterNodesProvider(givenAClusterNodesProvider());
+
+        final Promise<Void> startupTracker = Promise.promise();
+        adapter.start(startupTracker);
+
+        startupTracker.future().onComplete(ctx.failing(t -> {
+            ctx.verify(() -> {
+                assertThat(t).isInstanceOf(IllegalStateException.class);
+                assertThat(t.getMessage()).contains("advertised-address must be set");
+                verify(registry, never()).registerNode(anyInt(), any(InetSocketAddress.class), any(Duration.class));
+                verify(server, never()).start();
+            });
+            ctx.completeNow();
+        }));
+    }
+
+    /**
      * Verifies that the adapter leaves the cluster again if the CoAP server cannot be started.
      *
      * @param ctx The helper to use for running async tests on vertx.

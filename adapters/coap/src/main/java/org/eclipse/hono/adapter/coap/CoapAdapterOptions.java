@@ -211,6 +211,14 @@ public interface CoapAdapterOptions {
     String clusterBindAddress();
 
     /**
+     * Gets the IP address or host name that other cluster nodes use for reaching the cluster connector.
+     *
+     * @return The address or an empty optional if the bind address should be used.
+     */
+    @WithName("dtls.cluster.advertised-address")
+    Optional<String> clusterAdvertisedAddress();
+
+    /**
      * Gets the shared secret used for MAC authentication of cluster forward messages.
      *
      * @return The MAC secret, or empty if none configured.

@@ -131,6 +131,7 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
     private boolean clusterEnabled = DEFAULT_CLUSTER_ENABLED;
     private int clusterPort = DEFAULT_CLUSTER_PORT;
     private String clusterBindAddress = DEFAULT_CLUSTER_BIND_ADDRESS;
+    private String clusterAdvertisedAddress = null;
     private String clusterMacSecret = null;
     private Duration clusterHeartbeat = DEFAULT_CLUSTER_HEARTBEAT;
     private Duration clusterNodeTtl = DEFAULT_CLUSTER_NODE_TTL;
@@ -166,6 +167,7 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
         setClusterEnabled(options.clusterEnabled());
         setClusterPort(options.clusterPort());
         setClusterBindAddress(options.clusterBindAddress());
+        setClusterAdvertisedAddress(options.clusterAdvertisedAddress().orElse(null));
         setClusterMacSecret(options.clusterMacSecret().orElse(null));
         setClusterHeartbeat(options.clusterHeartbeat());
         setClusterNodeTtl(options.clusterNodeTtl());
@@ -670,6 +672,28 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
      */
     public final void setClusterBindAddress(final String clusterBindAddress) {
         this.clusterBindAddress = Objects.requireNonNull(clusterBindAddress);
+    }
+
+    /**
+     * Gets the IP address or host name that other cluster nodes use for reaching the cluster connector.
+     * <p>
+     * In a Kubernetes cluster, this is usually the IP address of the pod that the adapter runs in.
+     *
+     * @return The address or {@code null} if the bind address should be used.
+     */
+    public final String getClusterAdvertisedAddress() {
+        return clusterAdvertisedAddress;
+    }
+
+    /**
+     * Sets the IP address or host name that other cluster nodes use for reaching the cluster connector.
+     * <p>
+     * The address needs to be set if the cluster connector is bound to a wildcard address.
+     *
+     * @param clusterAdvertisedAddress The address or {@code null} if the bind address should be used.
+     */
+    public final void setClusterAdvertisedAddress(final String clusterAdvertisedAddress) {
+        this.clusterAdvertisedAddress = clusterAdvertisedAddress;
     }
 
     /**

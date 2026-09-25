@@ -43,6 +43,7 @@ public class CoapAdapterPropertiesTest {
         assertFalse(props.isClusterEnabled());
         assertEquals(5685, props.getClusterPort());
         assertEquals("0.0.0.0", props.getClusterBindAddress());
+        assertNull(props.getClusterAdvertisedAddress());
         assertNull(props.getClusterMacSecret());
         assertEquals(Duration.ofMillis(10_000), props.getClusterHeartbeat());
         assertEquals(Duration.ofMillis(30_000), props.getClusterNodeTtl());
@@ -72,6 +73,9 @@ public class CoapAdapterPropertiesTest {
 
         props.setClusterBindAddress("127.0.0.1");
         assertEquals("127.0.0.1", props.getClusterBindAddress());
+
+        props.setClusterAdvertisedAddress("10.0.0.7");
+        assertEquals("10.0.0.7", props.getClusterAdvertisedAddress());
 
         props.setClusterMacSecret("my-secret");
         assertEquals("my-secret", props.getClusterMacSecret());
@@ -159,6 +163,7 @@ public class CoapAdapterPropertiesTest {
         assertFalse(options.clusterEnabled());
         assertEquals(5685, options.clusterPort());
         assertEquals("0.0.0.0", options.clusterBindAddress());
+        assertTrue(options.clusterAdvertisedAddress().isEmpty());
         assertTrue(options.clusterMacSecret().isEmpty());
         assertEquals(Duration.ofSeconds(10), options.clusterHeartbeat());
         assertEquals(Duration.ofSeconds(30), options.clusterNodeTtl());
@@ -170,6 +175,7 @@ public class CoapAdapterPropertiesTest {
         assertFalse(props.isClusterEnabled());
         assertEquals(5685, props.getClusterPort());
         assertEquals("0.0.0.0", props.getClusterBindAddress());
+        assertNull(props.getClusterAdvertisedAddress());
         assertNull(props.getClusterMacSecret());
         assertEquals(Duration.ofSeconds(10), props.getClusterHeartbeat());
         assertEquals(Duration.ofSeconds(30), props.getClusterNodeTtl());
@@ -190,6 +196,7 @@ public class CoapAdapterPropertiesTest {
         assertTrue(options.clusterEnabled());
         assertEquals(5686, options.clusterPort());
         assertEquals("192.168.1.1", options.clusterBindAddress());
+        assertEquals(Optional.of("192.168.1.2"), options.clusterAdvertisedAddress());
         assertEquals(Optional.of("secret-key"), options.clusterMacSecret());
         assertEquals(Duration.ofSeconds(12), options.clusterHeartbeat());
         assertEquals(Duration.ofSeconds(35), options.clusterNodeTtl());
@@ -201,6 +208,7 @@ public class CoapAdapterPropertiesTest {
         assertTrue(props.isClusterEnabled());
         assertEquals(5686, props.getClusterPort());
         assertEquals("192.168.1.1", props.getClusterBindAddress());
+        assertEquals("192.168.1.2", props.getClusterAdvertisedAddress());
         assertEquals("secret-key", props.getClusterMacSecret());
         assertEquals(Duration.ofSeconds(12), props.getClusterHeartbeat());
         assertEquals(Duration.ofSeconds(35), props.getClusterNodeTtl());

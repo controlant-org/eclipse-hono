@@ -12,6 +12,7 @@
  */
 package org.eclipse.hono.adapter.coap;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.HashSet;
 import java.util.Objects;
@@ -112,12 +113,28 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
     }
 
     /**
-     * Gets the socket address used for cluster internal communication.
+     * Determines the socket address that other cluster nodes use for reaching this node's cluster connector.
+     * <p>
+     * The address is the configured advertised address, or the bind address if no advertised address
+     * has been configured. A wildcard address cannot be reached by other cluster nodes.
      *
-     * @return The socket address.
+     * @return A future containing the resolved address, or a failed future if the address cannot be resolved
+     *         or is a wildcard address.
      */
-    protected InetSocketAddress getClusterAddress() {
-        return new InetSocketAddress(getConfig().getClusterBindAddress(), getConfig().getClusterPort());
+    private Future<InetSocketAddress> resolveClusterAddress() {
+        final T config = getConfig();
+        final String host = Optional.ofNullable(config.getClusterAdvertisedAddress())
+                .orElseGet(config::getClusterBindAddress);
+        return vertx.executeBlocking(() -> new InetSocketAddress(InetAddress.getByName(host), config.getClusterPort()))
+                .compose(address -> {
+                    if (address.getAddress().isAnyLocalAddress()) {
+                        return Future.failedFuture(new IllegalStateException(
+                                "cluster mode requires an address that other cluster nodes can reach,"
+                                + " hono.coap.dtls.cluster.advertised-address must be set, e.g. to the IP address"
+                                + " of the pod, if the cluster connector is bound to a wildcard address"));
+                    }
+                    return Future.succeededFuture(address);
+                });
     }
 
     /**
@@ -293,10 +310,6 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
         if (!config.isClusterEnabled()) {
             return Future.succeededFuture();
         }
-        if ("0.0.0.0".equals(config.getClusterBindAddress())) {
-            log.warn("Cluster mode is enabled but clusterBindAddress is '0.0.0.0'."
-                    + " In multi-node deployments, clusterBindAddress should be set to the reachable pod IP or hostname");
-        }
         if (clusterNodeRegistry == null) {
             return Future.failedFuture(
                     new IllegalStateException("clusterNodeRegistry property must be set when cluster mode is enabled"));
@@ -309,16 +322,19 @@ public abstract class AbstractVertxBasedCoapAdapter<T extends CoapAdapterPropert
             return Future.failedFuture(
                     new IllegalStateException("cidNodeId must be configured when cluster mode is enabled"));
         }
-        clusterMembership = new CoapClusterMembership(
-                vertx,
-                clusterNodeRegistry,
-                clusterNodesProvider,
-                config.getCidNodeId(),
-                getClusterAddress(),
-                config.getClusterNodeTtl(),
-                config.getClusterHeartbeat(),
-                CoapClusterMembership.DEFAULT_LEAVE_TIMEOUT);
-        return clusterMembership.join();
+        return resolveClusterAddress()
+                .compose(address -> {
+                    clusterMembership = new CoapClusterMembership(
+                            vertx,
+                            clusterNodeRegistry,
+                            clusterNodesProvider,
+                            config.getCidNodeId(),
+                            address,
+                            config.getClusterNodeTtl(),
+                            config.getClusterHeartbeat(),
+                            CoapClusterMembership.DEFAULT_LEAVE_TIMEOUT);
+                    return clusterMembership.join();
+                });
     }
 
     private Future<Void> leaveCluster() {
