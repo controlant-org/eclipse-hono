@@ -73,11 +73,6 @@ hono:
         delivery.timeout.ms: ${kafka-client.producer.delivery-timeout-ms}
 
 quarkus:
-  micrometer:
-    #  enabled: true
-    binder:
-      redis:
-        enabled: true
   otel:
     exporter:
       otlp:
