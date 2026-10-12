@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2018, 2022 Contributors to the Eclipse Foundation
+ * Copyright (c) 2018, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -13,9 +13,14 @@
 
 package org.eclipse.hono.adapter.coap;
 
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.eclipse.hono.adapter.MicrometerBasedProtocolAdapterMetrics;
 import org.eclipse.hono.adapter.ProtocolAdapterProperties;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.vertx.core.Vertx;
 
@@ -23,6 +28,12 @@ import io.vertx.core.Vertx;
  * Metrics for the COAP based adapters.
  */
 public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAdapterMetrics implements CoapAdapterMetrics {
+
+    // the cluster counters are incremented for every record exchanged with another cluster node,
+    // so they are kept instead of being looked up in the meter registry each time
+    private final Map<String, Counter> forwardedCounters = new ConcurrentHashMap<>();
+    private final Map<String, Counter> backwardedCounters = new ConcurrentHashMap<>();
+    private final Map<List<String>, Counter> droppedCounters = new ConcurrentHashMap<>();
 
     /**
      * Create a new metrics instance for COAP adapters.
@@ -37,5 +48,33 @@ public class MicrometerBasedCoapAdapterMetrics extends MicrometerBasedProtocolAd
             final Vertx vertx,
             final ProtocolAdapterProperties config) {
         super(registry, vertx, config);
+    }
+
+    @Override
+    public void reportClusterRecordForwarded(final String direction) {
+        forwardedCounters.computeIfAbsent(direction, d -> Counter.builder(METER_COAP_DTLS_CLUSTER_FORWARDED)
+                .description("DTLS records forwarded to or from the cluster node owning the connection ID")
+                .tag(TAG_DIRECTION, d)
+                .register(registry))
+                .increment();
+    }
+
+    @Override
+    public void reportClusterRecordBackwarded(final String direction) {
+        backwardedCounters.computeIfAbsent(direction, d -> Counter.builder(METER_COAP_DTLS_CLUSTER_BACKWARDED)
+                .description("DTLS records sent back via the cluster node that has received the device's records")
+                .tag(TAG_DIRECTION, d)
+                .register(registry))
+                .increment();
+    }
+
+    @Override
+    public void reportClusterRecordDropped(final String path, final String reason) {
+        droppedCounters.computeIfAbsent(List.of(path, reason), k -> Counter.builder(METER_COAP_DTLS_CLUSTER_DROPPED)
+                .description("DTLS records that could not be exchanged with another cluster node")
+                .tag(TAG_PATH, path)
+                .tag(TAG_REASON, reason)
+                .register(registry))
+                .increment();
     }
 }
