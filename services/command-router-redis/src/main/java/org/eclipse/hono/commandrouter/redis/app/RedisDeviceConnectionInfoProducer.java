@@ -37,9 +37,9 @@ import jakarta.inject.Singleton;
 /**
  * A producer of an application scoped {@link DeviceConnectionInfo} instance.
  * <p>
- * The underlying cache implementation stores data in a remote Redis server. The connection to that
- * server is configured using the {@code hono.commandRouter.cache.redis} properties described in the
- * <em>Data Grid Connection Configuration</em> section of the Command Router admin guide.
+ * The underlying cache implementation stores data in a remote Redis server. The Quarkus Redis client
+ * connects to that server and reads its configuration from the standard {@code quarkus.redis} properties
+ * described in the <em>Redis cache</em> section of the Command Router admin guide.
  */
 @ApplicationScoped
 public class RedisDeviceConnectionInfoProducer {

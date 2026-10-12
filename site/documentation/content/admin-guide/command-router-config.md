@@ -254,23 +254,22 @@ environments is not recommended at this stage.
 {{% /notice %}}
 
 The Redis based variant (`hono-service-command-router-redis`) stores device connection information in a remote Redis
-server. It builds on the [Quarkus Redis client](https://quarkus.io/guides/redis-reference) and exposes that client's
-configuration properties under the `hono.commandRouter.cache.redis` prefix.
+server. It uses the [Quarkus Redis client](https://quarkus.io/guides/redis-reference) to connect to the server, so you
+configure the connection with that client's standard `quarkus.redis` properties.
 
 The following table provides an overview of the most commonly used configuration variables and corresponding system
 properties for configuring the connection to the Redis server:
 
 | OS Environment Variable<br>Java System Property | Mandatory | Default | Description                                                             |
 | :------------------------------------------ | :-------: | :------ | :-----------------------------------------------------------------------|
-| `HONO_COMMANDROUTER_CACHE_REDIS_HOSTS`<br>`hono.commandRouter.cache.redis.hosts` | no | `redis://localhost:6379` | The connection URI of the Redis server, in the form `redis://[username:password@]host:port`. For a TLS secured connection use the `rediss://` scheme. The default only works for a Redis server running on the local host, so this needs to be set for most deployments. |
-| `HONO_COMMANDROUTER_CACHE_REDIS_PASSWORD`<br>`hono.commandRouter.cache.redis.password` | no | - | The password to use for authenticating to the server. May alternatively be provided as part of the connection URI. |
-| `HONO_COMMANDROUTER_CACHE_REDIS_MAX_POOL_SIZE`<br>`hono.commandRouter.cache.redis.max-pool-size` | no | `6` | The maximum number of connections held in the connection pool. |
-| `HONO_COMMANDROUTER_CACHE_REDIS_MAX_POOL_WAITING`<br>`hono.commandRouter.cache.redis.max-pool-waiting` | no | `512` | The maximum number of connection acquisitions that may be queued while the pool is exhausted. The vert.x Redis client acquires a pooled connection per command, so a burst of commands to route can easily exceed `max-pool-size` concurrent commands. Acquisitions beyond this limit are rejected, failing command delivery, so a deep wait queue is used to absorb such bursts. This component raises the value from the Quarkus default of `24` to `512`. |
-| `HONO_COMMANDROUTER_CACHE_REDIS_TIMEOUT`<br>`hono.commandRouter.cache.redis.timeout` | no | `10s` | The maximum time to wait for a command to complete, using the [Quarkus duration format](https://quarkus.io/guides/config-reference#duration-note-anchor) (e.g. `10s`). |
+| `QUARKUS_REDIS_HOSTS`<br>`quarkus.redis.hosts` | yes | - | The connection URI of the Redis server, in the form `redis://[username:password@]host:port`. For a TLS secured connection use the `rediss://` scheme. |
+| `QUARKUS_REDIS_PASSWORD`<br>`quarkus.redis.password` | no | - | The password to use for authenticating to the server. May alternatively be provided as part of the connection URI. |
+| `QUARKUS_REDIS_MAX_POOL_SIZE`<br>`quarkus.redis.max-pool-size` | no | `6` | The maximum number of connections held in the connection pool. |
+| `QUARKUS_REDIS_MAX_POOL_WAITING`<br>`quarkus.redis.max-pool-waiting` | no | `512` | The maximum number of connection acquisitions that may be queued while the pool is exhausted. The vert.x Redis client acquires a pooled connection per command, so a burst of commands to route can easily exceed `max-pool-size` concurrent commands. Acquisitions beyond this limit are rejected, failing command delivery, so a deep wait queue is used to absorb such bursts. This component raises the value from the Quarkus default of `24` to `512`. |
+| `QUARKUS_REDIS_TIMEOUT`<br>`quarkus.redis.timeout` | no | `10s` | The maximum time to wait for a command to complete, using the [Quarkus duration format](https://quarkus.io/guides/config-reference#duration-note-anchor) (e.g. `10s`). |
 
 See the [Quarkus Redis client reference](https://quarkus.io/guides/redis-reference) for the full set of supported
-properties. Any property documented there under the `quarkus.redis` prefix can be set using the
-`hono.commandRouter.cache.redis` prefix instead.
+properties.
 
 {{% notice info %}}
 The Redis based variant implements its atomic cache operations as server-side Lua scripts and therefore requires the
