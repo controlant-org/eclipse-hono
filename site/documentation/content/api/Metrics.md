@@ -106,6 +106,17 @@ Assume that the minimum message size for a tenant is configured as 4096 bytes (4
 an incoming message with size 1KB is calculated as 4KB by the protocol adapters and reported to the metrics system.
 For an incoming message of size 10KB, it is reported as 12KB.
 
+#### CoAP Adapter Cluster Metrics
+
+The CoAP adapter reports the following metrics when running in
+[cluster mode]({{< relref "/admin-guide/coap-adapter-config#cluster-mode" >}}).
+
+| Metric                               | Type    | Tags                                                                  | Description |
+| ------------------------------------ | ------- | --------------------------------------------------------------------- | ----------- |
+| *hono.coap.dtls.cluster.forwarded*   | Counter | *host*, *component-type*, *component-name*, *direction*               | The number of DTLS records forwarded to the cluster node that has issued the connection ID contained in the record.<br/>`outbound` indicates records that the reporting node has received from a device and forwarded to another node,<br/>`inbound` indicates records that the reporting node has received from another node. |
+| *hono.coap.dtls.cluster.backwarded*  | Counter | *host*, *component-type*, *component-name*, *direction*               | The number of DTLS records sent to a device via the cluster node that has received the device's records.<br/>`outbound` indicates records that the reporting node has sent to the other node,<br/>`inbound` indicates records that the reporting node has received from another node and sent to the device. |
+| *hono.coap.dtls.cluster.dropped*     | Counter | *host*, *component-type*, *component-name*, *path*, *reason*          | The number of DTLS records that could not be exchanged with another cluster node.<br/>The *path* tag's value is `forward` for records sent to the node that has issued the connection ID and `backward` for records sent to a device via another node.<br/>The *reason* tag's value `undeliverable` indicates that the other node is unknown or not reachable or that the record is malformed, `mac_invalid` indicates that a record received from another node has an invalid MAC. |
+
 ### Service Metrics
 
 #### Authentication Server
