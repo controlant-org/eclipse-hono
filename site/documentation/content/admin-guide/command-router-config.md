@@ -266,7 +266,6 @@ properties for configuring the connection to the Redis server:
 | `QUARKUS_REDIS_PASSWORD`<br>`quarkus.redis.password` | no | - | The password to use for authenticating to the server. May alternatively be provided as part of the connection URI. |
 | `QUARKUS_REDIS_MAX_POOL_SIZE`<br>`quarkus.redis.max-pool-size` | no | `32` | The maximum number of connections held in the connection pool. The pool closes connections that stay unused for longer than `quarkus.redis.pool-recycle-timeout`, so a higher maximum adds Redis connections only during bursts. This component raises the value from the Quarkus default of `6` to `32`. |
 | `QUARKUS_REDIS_MAX_POOL_WAITING`<br>`quarkus.redis.max-pool-waiting` | no | `512` | The maximum number of connection acquisitions that may be queued while the pool is exhausted. The vert.x Redis client acquires a pooled connection per command, so a burst of commands to route can easily exceed `max-pool-size` concurrent commands. Acquisitions beyond this limit are rejected, failing command delivery, so a deep wait queue is used to absorb such bursts. This component raises the value from the Quarkus default of `24` to `512`. |
-| `QUARKUS_REDIS_TIMEOUT`<br>`quarkus.redis.timeout` | no | `10s` | The maximum time to wait for a command to complete, using the [Quarkus duration format](https://quarkus.io/guides/config-reference#duration-note-anchor) (e.g. `10s`). |
 
 See the [Quarkus Redis client reference](https://quarkus.io/guides/redis-reference) for the full set of supported
 properties.
