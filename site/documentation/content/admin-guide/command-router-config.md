@@ -278,6 +278,22 @@ command category must not be denied. The component verifies this at startup and 
 error if scripting is not permitted.
 {{% /notice %}}
 
+#### Connection pool sizing
+
+The Redis client sends each Redis command over a connection from its pool. If all `quarkus.redis.max-pool-size`
+connections are busy, further Redis commands wait in a queue that holds up to `quarkus.redis.max-pool-waiting`
+entries. The client rejects the Redis commands that do not fit into the queue, and delivery of the affected device
+commands fails. The trace of such a failed delivery shows an `io.vertx.core.http.ConnectionPoolTooBusyException` with
+the message `Connection pool reached max wait queue size of <n>`. The `redis_pool_rejected_total` metric counts the
+rejected Redis commands. The `redis_pool_ratio` metric shows the share of the pool's connections in use, and the
+`redis_pool_queue_size` metric shows the number of waiting Redis commands. If `redis_pool_rejected_total` increases,
+change the pool settings as follows:
+
+* Raise `quarkus.redis.max-pool-waiting` first. Queueing usually adds only a few milliseconds to a Redis command.
+* Raise `quarkus.redis.max-pool-size` if the queueing latency matters for command delivery.
+* Keep the number of Command Router instances multiplied by `quarkus.redis.max-pool-size` below the connection limit
+  of the Redis server (`maxclients`, which is `10000` by default) or of the managed Redis service.
+
 ## Authentication Service Connection Configuration
 
 The service requires a connection to an implementation of Hono's Authentication API in order to authenticate and
