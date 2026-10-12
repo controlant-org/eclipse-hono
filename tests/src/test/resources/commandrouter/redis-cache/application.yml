@@ -95,7 +95,7 @@ quarkus:
     # The pool settings below repeat the values the service image already applies. They do not
     # change the defaults, but are stated explicitly so the pool sizing the integration tests
     # run with is visible in one place.
-    max-pool-size: 6        # Quarkus default; maximum number of Redis connections in the pool
+    max-pool-size: 32       # raised from the Quarkus default of 6 by the service; maximum number of Redis connections in the pool
     max-pool-waiting: 512   # raised from the Quarkus default of 24 by the service to absorb bursts of command lookups
   vertx:
     max-event-loop-execute-time: ${max.event-loop.execute-time}
