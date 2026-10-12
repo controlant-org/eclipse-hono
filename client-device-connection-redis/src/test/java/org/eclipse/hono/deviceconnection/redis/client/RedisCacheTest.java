@@ -102,6 +102,125 @@ class RedisCacheTest {
     }
 
     /**
+     * Verifies that a conditional put stores a value for a key that is not mapped yet,
+     * using the given lifespan.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutIfAbsentStoresValueForUnmappedKey(final VertxTestContext ctx) {
+        final String key = randomKey("put-if-absent");
+        cache.putIfAbsent(key, "the-value", 10, TimeUnit.SECONDS)
+                .compose(stored -> {
+                    ctx.verify(() -> assertThat(stored).isTrue());
+                    return cache.get(key);
+                })
+                .compose(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("the-value"));
+                    return api.pttl(key);
+                })
+                .onComplete(ctx.succeeding(pttl -> {
+                    ctx.verify(() -> assertThat(pttl.toLong()).isGreaterThan(0L));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that a conditional put does not replace the value of a key that is already mapped.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutIfAbsentDoesNotReplaceExistingValue(final VertxTestContext ctx) {
+        final String key = randomKey("put-if-absent");
+        cache.put(key, "existing-value")
+                .compose(ok -> cache.putIfAbsent(key, "new-value", 10, TimeUnit.SECONDS))
+                .compose(stored -> {
+                    ctx.verify(() -> assertThat(stored).isFalse());
+                    return cache.get(key);
+                })
+                .onComplete(ctx.succeeding(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("existing-value"));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that a conditional replace stores the new value with the given lifespan
+     * if the key is mapped to the expected value.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testReplaceStoresValueIfKeyIsMappedToExpectedValue(final VertxTestContext ctx) {
+        final String key = randomKey("replace");
+        cache.put(key, "old-value")
+                .compose(ok -> cache.replace(key, "old-value", "new-value", 10, TimeUnit.SECONDS))
+                .compose(replaced -> {
+                    ctx.verify(() -> assertThat(replaced).isTrue());
+                    return cache.get(key);
+                })
+                .compose(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("new-value"));
+                    return api.pttl(key);
+                })
+                .onComplete(ctx.succeeding(pttl -> {
+                    ctx.verify(() -> assertThat(pttl.toLong()).isGreaterThan(0L));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that a conditional replace without a lifespan removes the lifespan of the entry.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testReplaceWithoutLifespanStoresValueWithoutExpiry(final VertxTestContext ctx) {
+        final String key = randomKey("replace");
+        cache.put(key, "old-value", 10, TimeUnit.SECONDS)
+                .compose(ok -> cache.replace(key, "old-value", "new-value", -1, TimeUnit.SECONDS))
+                .compose(replaced -> {
+                    ctx.verify(() -> assertThat(replaced).isTrue());
+                    return api.pttl(key);
+                })
+                .onComplete(ctx.succeeding(pttl -> {
+                    // PTTL returns -1 for a key without expiry
+                    ctx.verify(() -> assertThat(pttl.toLong()).isEqualTo(-1L));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that a conditional replace neither changes a key that is mapped to another value
+     * nor creates a key that is not mapped.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testReplaceDoesNotStoreValueIfKeyIsNotMappedToExpectedValue(final VertxTestContext ctx) {
+        final String key = randomKey("replace");
+        final String unmappedKey = randomKey("replace-unmapped");
+        cache.put(key, "existing-value")
+                .compose(ok -> cache.replace(key, "other-value", "new-value", 10, TimeUnit.SECONDS))
+                .compose(replaced -> {
+                    ctx.verify(() -> assertThat(replaced).isFalse());
+                    return cache.replace(unmappedKey, "other-value", "new-value", 10, TimeUnit.SECONDS);
+                })
+                .compose(replaced -> {
+                    ctx.verify(() -> assertThat(replaced).isFalse());
+                    return cache.getAll(Set.of(key, unmappedKey));
+                })
+                .onComplete(ctx.succeeding(values -> {
+                    ctx.verify(() -> {
+                        assertThat(values.get(key)).isEqualTo("existing-value");
+                        assertThat(values.get(unmappedKey)).isNull();
+                    });
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
      * Verifies that values stored via putAll can be retrieved via getAll.
      *
      * @param ctx The vert.x test context.

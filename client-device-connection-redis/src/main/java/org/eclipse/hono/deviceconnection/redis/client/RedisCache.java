@@ -68,6 +68,23 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
             end""";
 
     /**
+     * Atomically sets a key to a new value only if it currently holds the given value.
+     * ARGV[1] holds the expected value, ARGV[2] the new value and ARGV[3] the
+     * time-to-live in milliseconds, which is not set if it isn't positive.
+     * Returns 1 if the value has been replaced and 0 otherwise.
+     */
+    private static final String COMPARE_AND_SET_SCRIPT = """
+            if redis.call('get', KEYS[1]) ~= ARGV[1] then
+                return 0
+            end
+            if tonumber(ARGV[3]) > 0 then
+                redis.call('set', KEYS[1], ARGV[2], 'PX', ARGV[3])
+            else
+                redis.call('set', KEYS[1], ARGV[2])
+            end
+            return 1""";
+
+    /**
      * Atomically sets each key to its corresponding value with a shared
      * time-to-live. ARGV[1] holds the TTL in milliseconds, ARGV[i + 1] the
      * value for KEYS[i].
@@ -141,6 +158,43 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
         }
         return api.set(params)
                 .mapEmpty();
+    }
+
+    @Override
+    public Future<Boolean> putIfAbsent(
+            final String key,
+            final String value,
+            final long lifespan,
+            final TimeUnit lifespanUnit) {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(value);
+        Objects.requireNonNull(lifespanUnit);
+
+        final List<String> params = new ArrayList<>(List.of(key, value, "NX"));
+        final long millis = lifespanUnit.toMillis(lifespan);
+        if (millis > 0) {
+            params.addAll(List.of("PX", String.valueOf(millis)));
+        }
+        // SET with NX replies with OK if the value has been set and with a null reply otherwise
+        return api.set(params)
+                .map(Objects::nonNull);
+    }
+
+    @Override
+    public Future<Boolean> replace(
+            final String key,
+            final String oldValue,
+            final String newValue,
+            final long lifespan,
+            final TimeUnit lifespanUnit) {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(oldValue);
+        Objects.requireNonNull(newValue);
+        Objects.requireNonNull(lifespanUnit);
+
+        final long millis = lifespanUnit.toMillis(lifespan);
+        return api.eval(List.of(COMPARE_AND_SET_SCRIPT, "1", key, oldValue, newValue, String.valueOf(millis)))
+                .map(response -> response.toInteger() == 1);
     }
 
     @Override

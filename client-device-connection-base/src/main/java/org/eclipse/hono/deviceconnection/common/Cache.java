@@ -64,6 +64,39 @@ public interface Cache<K, V> {
     Future<Void> put(K key, V value, long lifespan, TimeUnit lifespanUnit);
 
     /**
+     * Puts a value to the cache unless the key is already mapped to a value.
+     * <p>
+     * Checking for an existing value and storing the new value is an atomic operation.
+     *
+     * @param key The key.
+     * @param value The value.
+     * @param lifespan The lifespan of the entry. A negative value is interpreted as an unlimited lifespan.
+     * @param lifespanUnit The time unit for the lifespan.
+     * @return A succeeded future containing {@code true} if the value has been stored or {@code false}
+     *         if the key was already mapped to a value.
+     *         A failed future if the value could not be stored in the cache.
+     * @throws NullPointerException if any of the parameters is {@code null}.
+     */
+    Future<Boolean> putIfAbsent(K key, V value, long lifespan, TimeUnit lifespanUnit);
+
+    /**
+     * Replaces the value of a key only if the key is currently mapped to the given value.
+     * <p>
+     * Checking the current value and storing the new value is an atomic operation.
+     *
+     * @param key The key.
+     * @param oldValue The value that the key is expected to be mapped to.
+     * @param newValue The value to store.
+     * @param lifespan The lifespan of the entry. A negative value is interpreted as an unlimited lifespan.
+     * @param lifespanUnit The time unit for the lifespan.
+     * @return A succeeded future containing {@code true} if the value has been replaced or {@code false}
+     *         if the key was not mapped to the expected value.
+     *         A failed future if the value could not be replaced in the cache.
+     * @throws NullPointerException if any of the parameters is {@code null}.
+     */
+    Future<Boolean> replace(K key, V oldValue, V newValue, long lifespan, TimeUnit lifespanUnit);
+
+    /**
      * Puts all values of the given map to the cache.
      *
      * @param data The map with the entries to add.
