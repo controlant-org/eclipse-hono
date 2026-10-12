@@ -144,6 +144,26 @@ public class RedisCache implements Cache<String, String>, Lifecycle {
     }
 
     @Override
+    public Future<Boolean> putIfAbsent(
+            final String key,
+            final String value,
+            final long lifespan,
+            final TimeUnit lifespanUnit) {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(value);
+        Objects.requireNonNull(lifespanUnit);
+
+        final List<String> params = new ArrayList<>(List.of(key, value, "NX"));
+        final long millis = lifespanUnit.toMillis(lifespan);
+        if (millis > 0) {
+            params.addAll(List.of("PX", String.valueOf(millis)));
+        }
+        // SET with NX replies with OK if the value has been set and with a null reply otherwise
+        return api.set(params)
+                .map(Objects::nonNull);
+    }
+
+    @Override
     public Future<Void> putAll(final Map<? extends String, ? extends String> data) {
         Objects.requireNonNull(data);
 

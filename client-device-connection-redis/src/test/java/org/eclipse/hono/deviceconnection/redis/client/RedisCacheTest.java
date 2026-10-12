@@ -102,6 +102,50 @@ class RedisCacheTest {
     }
 
     /**
+     * Verifies that a conditional put stores a value for a key that is not mapped yet,
+     * using the given lifespan.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutIfAbsentStoresValueForUnmappedKey(final VertxTestContext ctx) {
+        final String key = randomKey("put-if-absent");
+        cache.putIfAbsent(key, "the-value", 10, TimeUnit.SECONDS)
+                .compose(stored -> {
+                    ctx.verify(() -> assertThat(stored).isTrue());
+                    return cache.get(key);
+                })
+                .compose(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("the-value"));
+                    return api.pttl(key);
+                })
+                .onComplete(ctx.succeeding(pttl -> {
+                    ctx.verify(() -> assertThat(pttl.toLong()).isGreaterThan(0L));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
+     * Verifies that a conditional put does not replace the value of a key that is already mapped.
+     *
+     * @param ctx The vert.x test context.
+     */
+    @Test
+    void testPutIfAbsentDoesNotReplaceExistingValue(final VertxTestContext ctx) {
+        final String key = randomKey("put-if-absent");
+        cache.put(key, "existing-value")
+                .compose(ok -> cache.putIfAbsent(key, "new-value", 10, TimeUnit.SECONDS))
+                .compose(stored -> {
+                    ctx.verify(() -> assertThat(stored).isFalse());
+                    return cache.get(key);
+                })
+                .onComplete(ctx.succeeding(value -> {
+                    ctx.verify(() -> assertThat(value).isEqualTo("existing-value"));
+                    ctx.completeNow();
+                }));
+    }
+
+    /**
      * Verifies that values stored via putAll can be retrieved via getAll.
      *
      * @param ctx The vert.x test context.
