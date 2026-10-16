@@ -163,6 +163,17 @@ public abstract class BasicCache<K, V> implements Cache<K, V>, Lifecycle {
     }
 
     @Override
+    public Future<Boolean> putIfAbsent(final K key, final V value, final long lifespan, final TimeUnit lifespanUnit) {
+        Objects.requireNonNull(key);
+        Objects.requireNonNull(value);
+        Objects.requireNonNull(lifespanUnit);
+
+        // the previous value is null if there was no mapping for the key
+        return withCache(aCache -> aCache.putIfAbsentAsync(key, value, lifespan, lifespanUnit)
+                .thenApply(Objects::isNull));
+    }
+
+    @Override
     public Future<Void> putAll(final Map<? extends K, ? extends V> data) {
         Objects.requireNonNull(data);
 

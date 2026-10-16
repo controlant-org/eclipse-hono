@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2021, 2022 Contributors to the Eclipse Foundation
+ * Copyright (c) 2021, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -13,13 +13,16 @@
 
 package org.eclipse.hono.adapter.coap;
 
+import java.time.Duration;
 import java.util.Optional;
 
 import org.eclipse.hono.adapter.ProtocolAdapterOptions;
+import org.eclipse.hono.util.Constants;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.ConfigMapping.NamingStrategy;
 import io.smallrye.config.WithDefault;
+import io.smallrye.config.WithName;
 import io.smallrye.config.WithParentName;
 
 /**
@@ -152,4 +155,93 @@ public interface CoapAdapterOptions {
      */
     @WithDefault("500")
     int timeoutToAck();
+
+    /**
+     * Checks if DTLS Connection ID (CID) support is enabled.
+     *
+     * @return {@code true} if CID is enabled.
+     */
+    @WithName("dtls.cid.enabled")
+    @WithDefault("false")
+    boolean cidEnabled();
+
+    /**
+     * Gets the length of the Connection ID in bytes.
+     *
+     * @return The CID length in bytes.
+     */
+    @WithName("dtls.cid.length")
+    @WithDefault("6")
+    int cidLength();
+
+    /**
+     * Gets the cluster node ID embedded into generated Connection IDs.
+     *
+     * @return The node ID, or {@link Constants#PORT_UNCONFIGURED} if unset / auto-assigned.
+     */
+    @WithName("dtls.cid.node-id")
+    @WithDefault(Constants.PORT_UNCONFIGURED_STRING)
+    int cidNodeId();
+
+    /**
+     * Checks if DTLS cluster forwarding mesh is enabled.
+     *
+     * @return {@code true} if clustering is enabled.
+     */
+    @WithName("dtls.cluster.enabled")
+    @WithDefault("false")
+    boolean clusterEnabled();
+
+    /**
+     * Gets the port used for cluster-internal UDP mesh forwarding.
+     *
+     * @return The cluster port.
+     */
+    @WithName("dtls.cluster.port")
+    @WithDefault("5685")
+    int clusterPort();
+
+    /**
+     * Gets the local network interface IP address to bind the cluster connector to.
+     *
+     * @return The bind address.
+     */
+    @WithName("dtls.cluster.bind-address")
+    @WithDefault("0.0.0.0")
+    String clusterBindAddress();
+
+    /**
+     * Gets the IP address or host name that other cluster nodes use for reaching the cluster connector.
+     *
+     * @return The address or an empty optional if the bind address should be used.
+     */
+    @WithName("dtls.cluster.advertised-address")
+    Optional<String> clusterAdvertisedAddress();
+
+    /**
+     * Gets the shared secret used for MAC authentication of cluster forward messages.
+     *
+     * @return The MAC secret, or empty if none configured.
+     */
+    @WithName("dtls.cluster.mac-secret")
+    Optional<String> clusterMacSecret();
+
+    /**
+     * Gets the interval between cluster node heartbeat registrations.
+     *
+     * @return The heartbeat interval.
+     */
+    @WithName("dtls.cluster.heartbeat")
+    @WithDefault("PT10S")
+    Duration clusterHeartbeat();
+
+    /**
+     * Gets the time-to-live for node registrations in the cluster registry.
+     *
+     * @return The node TTL.
+     */
+    @WithName("dtls.cluster.node-ttl")
+    @WithDefault("PT30S")
+    Duration clusterNodeTtl();
 }
+

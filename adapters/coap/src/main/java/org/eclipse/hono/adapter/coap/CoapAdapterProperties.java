@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ * Copyright (c) 2018, 2026 Contributors to the Eclipse Foundation
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information regarding copyright ownership.
@@ -13,9 +13,11 @@
 
 package org.eclipse.hono.adapter.coap;
 
+import java.time.Duration;
 import java.util.Objects;
 
 import org.eclipse.hono.adapter.ProtocolAdapterProperties;
+import org.eclipse.hono.util.Constants;
 
 /**
  * Properties for configuring the CoAP protocol adapter.
@@ -66,6 +68,38 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
      * that time, the status gets removed and a new request will fail.
      */
     public static final int DEFAULT_BLOCKWISE_STATUS_LIFETIME = 300000;
+    /**
+     * The default for enabling DTLS Connection ID (CID) support.
+     */
+    public static final boolean DEFAULT_CID_ENABLED = false;
+    /**
+     * The default length in bytes for generated Connection IDs.
+     */
+    public static final int DEFAULT_CID_LENGTH = 6;
+    /**
+     * The default cluster node ID embedded in Connection IDs.
+     */
+    public static final int DEFAULT_CID_NODE_ID = Constants.PORT_UNCONFIGURED;
+    /**
+     * The default for enabling the DTLS cluster mesh connector.
+     */
+    public static final boolean DEFAULT_CLUSTER_ENABLED = false;
+    /**
+     * The default port for the cluster connector.
+     */
+    public static final int DEFAULT_CLUSTER_PORT = 5685;
+    /**
+     * The default bind address for the cluster connector.
+     */
+    public static final String DEFAULT_CLUSTER_BIND_ADDRESS = "0.0.0.0";
+    /**
+     * The default interval for cluster heartbeat registrations.
+     */
+    public static final Duration DEFAULT_CLUSTER_HEARTBEAT = Duration.ofSeconds(10);
+    /**
+     * The default TTL for cluster node entries.
+     */
+    public static final Duration DEFAULT_CLUSTER_NODE_TTL = Duration.ofSeconds(30);
 
     static {
         DEFAULT_CONNECTOR_THREADS = 2;
@@ -91,6 +125,16 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
     private int blockwiseStatusLifetime = DEFAULT_BLOCKWISE_STATUS_LIFETIME;
     private boolean messageOffloadingEnabled = DEFAULT_MESSAGE_OFFLOADING;
     private int timeoutToAck = DEFAULT_TIMEOUT_TO_ACK;
+    private boolean cidEnabled = DEFAULT_CID_ENABLED;
+    private int cidLength = DEFAULT_CID_LENGTH;
+    private int cidNodeId = DEFAULT_CID_NODE_ID;
+    private boolean clusterEnabled = DEFAULT_CLUSTER_ENABLED;
+    private int clusterPort = DEFAULT_CLUSTER_PORT;
+    private String clusterBindAddress = DEFAULT_CLUSTER_BIND_ADDRESS;
+    private String clusterAdvertisedAddress = null;
+    private String clusterMacSecret = null;
+    private Duration clusterHeartbeat = DEFAULT_CLUSTER_HEARTBEAT;
+    private Duration clusterNodeTtl = DEFAULT_CLUSTER_NODE_TTL;
 
     /**
      * Creates properties using default values.
@@ -117,6 +161,16 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
         this.networkConfig = options.networkConfig().orElse(null);
         this.secureNetworkConfig = options.secureNetworkConfig().orElse(null);
         setTimeoutToAck(options.timeoutToAck());
+        setCidEnabled(options.cidEnabled());
+        setCidLength(options.cidLength());
+        setCidNodeId(options.cidNodeId());
+        setClusterEnabled(options.clusterEnabled());
+        setClusterPort(options.clusterPort());
+        setClusterBindAddress(options.clusterBindAddress());
+        setClusterAdvertisedAddress(options.clusterAdvertisedAddress().orElse(null));
+        setClusterMacSecret(options.clusterMacSecret().orElse(null));
+        setClusterHeartbeat(options.clusterHeartbeat());
+        setClusterNodeTtl(options.clusterNodeTtl());
     }
 
     /**
@@ -466,4 +520,278 @@ public class CoapAdapterProperties extends ProtocolAdapterProperties {
         }
         this.timeoutToAck = timeoutToAck;
     }
+
+    /**
+     * Checks if DTLS Connection ID (CID) support is enabled.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CID_ENABLED}.
+     *
+     * @return {@code true} if CID is enabled.
+     */
+    public final boolean isCidEnabled() {
+        return cidEnabled;
+    }
+
+    /**
+     * Sets whether DTLS Connection ID (CID) support is enabled.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CID_ENABLED}.
+     *
+     * @param cidEnabled {@code true} to enable CID.
+     */
+    public final void setCidEnabled(final boolean cidEnabled) {
+        this.cidEnabled = cidEnabled;
+    }
+
+    /**
+     * Gets the length in bytes of the Connection ID.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CID_LENGTH}.
+     *
+     * @return The CID length in bytes.
+     */
+    public final int getCidLength() {
+        return cidLength;
+    }
+
+    /**
+     * Sets the length in bytes of the Connection ID.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CID_LENGTH}.
+     * Must be between 1 and 255, and at least 5 when clustering is enabled.
+     *
+     * @param cidLength The CID length in bytes.
+     * @throws IllegalArgumentException if cidLength &lt; 1, &gt; 255, or &lt; 5 when clustering is enabled.
+     */
+    public final void setCidLength(final int cidLength) {
+        if (cidLength < 1 || cidLength > 255) {
+            throw new IllegalArgumentException("CID length must be between 1 and 255");
+        }
+        if (this.clusterEnabled && cidLength < 5) {
+            throw new IllegalArgumentException("CID length must be at least 5 when clustering is enabled");
+        }
+        this.cidLength = cidLength;
+    }
+
+    /**
+     * Gets the cluster node ID embedded into Connection IDs.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CID_NODE_ID}.
+     *
+     * @return The node ID, or {@link Constants#PORT_UNCONFIGURED} if unset / auto-assigned.
+     */
+    public final int getCidNodeId() {
+        return cidNodeId;
+    }
+
+    /**
+     * Sets the cluster node ID embedded into Connection IDs.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CID_NODE_ID}.
+     *
+     * @param cidNodeId The node ID (0-255), or {@link Constants#PORT_UNCONFIGURED} for unconfigured.
+     * @throws IllegalArgumentException if cidNodeId is not between 0 and 255 and not {@link Constants#PORT_UNCONFIGURED}.
+     */
+    public final void setCidNodeId(final int cidNodeId) {
+        if (cidNodeId != Constants.PORT_UNCONFIGURED && (cidNodeId < 0 || cidNodeId > 255)) {
+            throw new IllegalArgumentException("CID node ID must be between 0 and 255, or " + Constants.PORT_UNCONFIGURED);
+        }
+        this.cidNodeId = cidNodeId;
+    }
+
+    /**
+     * Checks if DTLS cluster mesh forwarding is enabled.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CLUSTER_ENABLED}.
+     *
+     * @return {@code true} if clustering is enabled.
+     */
+    public final boolean isClusterEnabled() {
+        return clusterEnabled;
+    }
+
+    /**
+     * Sets whether DTLS cluster mesh forwarding is enabled.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CLUSTER_ENABLED}.
+     *
+     * @param clusterEnabled {@code true} to enable clustering.
+     * @throws IllegalArgumentException if clusterEnabled is true and cidLength &lt; 5.
+     */
+    public final void setClusterEnabled(final boolean clusterEnabled) {
+        if (clusterEnabled && this.cidLength < 5) {
+            throw new IllegalArgumentException("CID length must be at least 5 when clustering is enabled");
+        }
+        this.clusterEnabled = clusterEnabled;
+    }
+
+    /**
+     * Gets the port used for cluster mesh forwarding.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CLUSTER_PORT}.
+     *
+     * @return The cluster port.
+     */
+    public final int getClusterPort() {
+        return clusterPort;
+    }
+
+    /**
+     * Sets the port used for cluster mesh forwarding.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CLUSTER_PORT}.
+     *
+     * @param clusterPort The port number (1-65535).
+     * @throws IllegalArgumentException if clusterPort &lt;= 0 or &gt; 65535.
+     */
+    public final void setClusterPort(final int clusterPort) {
+        if (clusterPort <= 0 || clusterPort > 65535) {
+            throw new IllegalArgumentException("cluster port must be between 1 and 65535");
+        }
+        this.clusterPort = clusterPort;
+    }
+
+    /**
+     * Gets the bind address for the cluster connector.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CLUSTER_BIND_ADDRESS}.
+     *
+     * @return The bind address.
+     */
+    public final String getClusterBindAddress() {
+        return clusterBindAddress;
+    }
+
+    /**
+     * Sets the bind address for the cluster connector.
+     * <p>
+     * The default value of this property is {@value #DEFAULT_CLUSTER_BIND_ADDRESS}.
+     *
+     * @param clusterBindAddress The bind address.
+     * @throws NullPointerException if clusterBindAddress is {@code null}.
+     */
+    public final void setClusterBindAddress(final String clusterBindAddress) {
+        this.clusterBindAddress = Objects.requireNonNull(clusterBindAddress);
+    }
+
+    /**
+     * Gets the IP address or host name that other cluster nodes use for reaching the cluster connector.
+     * <p>
+     * In a Kubernetes cluster, this is usually the IP address of the pod that the adapter runs in.
+     *
+     * @return The address or {@code null} if the bind address should be used.
+     */
+    public final String getClusterAdvertisedAddress() {
+        return clusterAdvertisedAddress;
+    }
+
+    /**
+     * Sets the IP address or host name that other cluster nodes use for reaching the cluster connector.
+     * <p>
+     * The address needs to be set if the cluster connector is bound to a wildcard address.
+     *
+     * @param clusterAdvertisedAddress The address or {@code null} if the bind address should be used.
+     */
+    public final void setClusterAdvertisedAddress(final String clusterAdvertisedAddress) {
+        this.clusterAdvertisedAddress = clusterAdvertisedAddress;
+    }
+
+    /**
+     * Gets the shared secret for authenticating cluster forward messages.
+     *
+     * @return The MAC secret, or {@code null} if not configured.
+     */
+    public final String getClusterMacSecret() {
+        return clusterMacSecret;
+    }
+
+    /**
+     * Sets the shared secret for authenticating cluster forward messages.
+     *
+     * @param clusterMacSecret The MAC secret, or {@code null} to disable MAC.
+     */
+    public final void setClusterMacSecret(final String clusterMacSecret) {
+        this.clusterMacSecret = clusterMacSecret;
+    }
+
+    /**
+     * Gets the interval between cluster node heartbeat registrations.
+     * <p>
+     * The default value of this property is 10 seconds.
+     *
+     * @return The heartbeat interval.
+     */
+    public final Duration getClusterHeartbeat() {
+        return clusterHeartbeat;
+    }
+
+    /**
+     * Sets the interval between cluster node heartbeat registrations.
+     * <p>
+     * The interval must be shorter than the {@linkplain #getClusterNodeTtl() node TTL}.
+     *
+     * @param clusterHeartbeat The heartbeat interval.
+     * @throws NullPointerException if clusterHeartbeat is {@code null}.
+     * @throws IllegalArgumentException if clusterHeartbeat is shorter than one millisecond.
+     */
+    public final void setClusterHeartbeat(final Duration clusterHeartbeat) {
+        Objects.requireNonNull(clusterHeartbeat);
+        if (clusterHeartbeat.toMillis() < 1) {
+            throw new IllegalArgumentException("cluster heartbeat must be at least one millisecond");
+        }
+        this.clusterHeartbeat = clusterHeartbeat;
+    }
+
+    /**
+     * Sets the interval between cluster node heartbeat registrations in milliseconds.
+     *
+     * @param millis The heartbeat interval in milliseconds.
+     * @throws IllegalArgumentException if millis &lt;= 0.
+     */
+    public final void setClusterHeartbeat(final long millis) {
+        if (millis <= 0) {
+            throw new IllegalArgumentException("cluster heartbeat must be positive");
+        }
+        this.clusterHeartbeat = Duration.ofMillis(millis);
+    }
+
+    /**
+     * Gets the time-to-live for node entries in the cluster registry.
+     * <p>
+     * The default value of this property is 30 seconds.
+     *
+     * @return The node TTL.
+     */
+    public final Duration getClusterNodeTtl() {
+        return clusterNodeTtl;
+    }
+
+    /**
+     * Sets the time-to-live for node entries in the cluster registry.
+     *
+     * @param clusterNodeTtl The node TTL.
+     * @throws NullPointerException if clusterNodeTtl is {@code null}.
+     * @throws IllegalArgumentException if clusterNodeTtl is shorter than one millisecond.
+     */
+    public final void setClusterNodeTtl(final Duration clusterNodeTtl) {
+        Objects.requireNonNull(clusterNodeTtl);
+        if (clusterNodeTtl.toMillis() < 1) {
+            throw new IllegalArgumentException("cluster node TTL must be at least one millisecond");
+        }
+        this.clusterNodeTtl = clusterNodeTtl;
+    }
+
+    /**
+     * Sets the time-to-live for node entries in the cluster registry in milliseconds.
+     *
+     * @param millis The node TTL in milliseconds.
+     * @throws IllegalArgumentException if millis &lt;= 0.
+     */
+    public final void setClusterNodeTtl(final long millis) {
+        if (millis <= 0) {
+            throw new IllegalArgumentException("cluster node TTL must be positive");
+        }
+        this.clusterNodeTtl = Duration.ofMillis(millis);
+    }
 }
+
